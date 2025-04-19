@@ -1,0 +1,384 @@
+{
+  "game_id": "game_test",
+  "team": "Gloucester City Kings",
+  "players": [
+    {
+      "number": "6",
+      "name": "Seamus O'Dwyer",
+      "minutes": "17:53",
+      "fg": "0/2",
+      "fg_pct": 0.0,
+      "two_pt": {
+        "m_a": "0/1",
+        "pct": 0.0
+      },
+      "three_pt": {
+        "m_a": "0/1",
+        "pct": 0.0
+      },
+      "free_throws": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "rebounds": {
+        "or": 0,
+        "dr": 3,
+        "tot": 3
+      },
+      "assists": 2,
+      "turnovers": 5,
+      "assist_turnover_ratio": 0.4,
+      "steals": 0,
+      "blocks": 0,
+      "fouls": {
+        "pf": 2,
+        "fd": 0
+      },
+      "plus_minus": -22,
+      "points": 0,
+      "true_shooting_pct": 0.0,
+      "effective_field_goal_pct": 0.0,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Seamus_O'Dwyer"
+    },
+    {
+      "number": "7",
+      "name": "Jon Martin",
+      "minutes": "00:33",
+      "fg": "0/0",
+      "fg_pct": 0.0,
+      "two_pt": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "three_pt": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "free_throws": {
+        "m_a": "4/7",
+        "pct": 57.1
+      },
+      "rebounds": {
+        "or": 0,
+        "dr": 0,
+        "tot": 0
+      },
+      "assists": 0,
+      "turnovers": 0,
+      "assist_turnover_ratio": 0.0,
+      "steals": 0,
+      "blocks": 0,
+      "fouls": {
+        "pf": 0,
+        "fd": 3
+      },
+      "plus_minus": 1,
+      "points": 4,
+      "true_shooting_pct": 64.94,
+      "effective_field_goal_pct": 0.0,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Jon_Martin"
+    },
+    {
+      "number": "8",
+      "name": "Tom Headman",
+      "minutes": "14:50",
+      "fg": "2/5",
+      "fg_pct": 40.0,
+      "two_pt": {
+        "m_a": "2/4",
+        "pct": 50.0
+      },
+      "three_pt": {
+        "m_a": "0/1",
+        "pct": 0.0
+      },
+      "free_throws": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "rebounds": {
+        "or": 1,
+        "dr": 2,
+        "tot": 3
+      },
+      "assists": 1,
+      "turnovers": 4,
+      "assist_turnover_ratio": 0.25,
+      "steals": 0,
+      "blocks": 0,
+      "fouls": {
+        "pf": 0,
+        "fd": 0
+      },
+      "plus_minus": -7,
+      "points": 4,
+      "true_shooting_pct": 40.0,
+      "effective_field_goal_pct": 40.0,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Tom_Headman"
+    },
+    {
+      "number": "9",
+      "name": "Will Headman",
+      "minutes": "18:50",
+      "fg": "2/4",
+      "fg_pct": 50.0,
+      "two_pt": {
+        "m_a": "1/2",
+        "pct": 50.0
+      },
+      "three_pt": {
+        "m_a": "1/2",
+        "pct": 50.0
+      },
+      "free_throws": {
+        "m_a": "6/8",
+        "pct": 75.0
+      },
+      "rebounds": {
+        "or": 2,
+        "dr": 4,
+        "tot": 6
+      },
+      "assists": 1,
+      "turnovers": 1,
+      "assist_turnover_ratio": 1.0,
+      "steals": 0,
+      "blocks": 1,
+      "fouls": {
+        "pf": 4,
+        "fd": 4
+      },
+      "plus_minus": -16,
+      "points": 11,
+      "true_shooting_pct": 73.14,
+      "effective_field_goal_pct": 62.5,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Will_Headman"
+    },
+    {
+      "number": "*10",
+      "name": "Louis Fawl",
+      "minutes": "29:06",
+      "fg": "8/14",
+      "fg_pct": 57.1,
+      "two_pt": {
+        "m_a": "3/7",
+        "pct": 42.9
+      },
+      "three_pt": {
+        "m_a": "5/7",
+        "pct": 71.4
+      },
+      "free_throws": {
+        "m_a": "1/1",
+        "pct": 100.0
+      },
+      "rebounds": {
+        "or": 1,
+        "dr": 3,
+        "tot": 4
+      },
+      "assists": 3,
+      "turnovers": 3,
+      "assist_turnover_ratio": 1.0,
+      "steals": 1,
+      "blocks": 0,
+      "fouls": {
+        "pf": 2,
+        "fd": 1
+      },
+      "plus_minus": 21,
+      "points": 22,
+      "true_shooting_pct": 76.18,
+      "effective_field_goal_pct": 75.0,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Louis_Fawl"
+    },
+    {
+      "number": "*11",
+      "name": "Frank Mustoe",
+      "minutes": "29:17",
+      "fg": "1/5",
+      "fg_pct": 20.0,
+      "two_pt": {
+        "m_a": "1/4",
+        "pct": 25.0
+      },
+      "three_pt": {
+        "m_a": "0/1",
+        "pct": 0.0
+      },
+      "free_throws": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "rebounds": {
+        "or": 0,
+        "dr": 4,
+        "tot": 4
+      },
+      "assists": 5,
+      "turnovers": 5,
+      "assist_turnover_ratio": 1.0,
+      "steals": 0,
+      "blocks": 1,
+      "fouls": {
+        "pf": 5,
+        "fd": 0
+      },
+      "plus_minus": 12,
+      "points": 2,
+      "true_shooting_pct": 20.0,
+      "effective_field_goal_pct": 20.0,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Frank_Mustoe"
+    },
+    {
+      "number": "*12",
+      "name": "Gianni Kelly",
+      "minutes": "15:26",
+      "fg": "0/0",
+      "fg_pct": 0.0,
+      "two_pt": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "three_pt": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "free_throws": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "rebounds": {
+        "or": 0,
+        "dr": 2,
+        "tot": 2
+      },
+      "assists": 4,
+      "turnovers": 5,
+      "assist_turnover_ratio": 0.8,
+      "steals": 1,
+      "blocks": 1,
+      "fouls": {
+        "pf": 0,
+        "fd": 0
+      },
+      "plus_minus": 9,
+      "points": 0,
+      "true_shooting_pct": 0.0,
+      "effective_field_goal_pct": 0.0,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Gianni_Kelly"
+    },
+    {
+      "number": "*13",
+      "name": "Rhys Farrell",
+      "minutes": "38:25",
+      "fg": "14/27",
+      "fg_pct": 51.9,
+      "two_pt": {
+        "m_a": "8/15",
+        "pct": 53.3
+      },
+      "three_pt": {
+        "m_a": "6/12",
+        "pct": 50.0
+      },
+      "free_throws": {
+        "m_a": "2/5",
+        "pct": 40.0
+      },
+      "rebounds": {
+        "or": 2,
+        "dr": 9,
+        "tot": 11
+      },
+      "assists": 5,
+      "turnovers": 3,
+      "assist_turnover_ratio": 1.67,
+      "steals": 0,
+      "blocks": 1,
+      "fouls": {
+        "pf": 0,
+        "fd": 6
+      },
+      "plus_minus": 10,
+      "points": 36,
+      "true_shooting_pct": 61.64,
+      "effective_field_goal_pct": 62.96,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Rhys_Farrell"
+    },
+    {
+      "number": "*15",
+      "name": "Fraser MacDonald",
+      "minutes": "35:40",
+      "fg": "7/13",
+      "fg_pct": 53.8,
+      "two_pt": {
+        "m_a": "7/13",
+        "pct": 53.8
+      },
+      "three_pt": {
+        "m_a": "0/0",
+        "pct": 0.0
+      },
+      "free_throws": {
+        "m_a": "4/10",
+        "pct": 40.0
+      },
+      "rebounds": {
+        "or": 6,
+        "dr": 13,
+        "tot": 19
+      },
+      "assists": 5,
+      "turnovers": 5,
+      "assist_turnover_ratio": 1.0,
+      "steals": 0,
+      "blocks": 4,
+      "fouls": {
+        "pf": 3,
+        "fd": 11
+      },
+      "plus_minus": -3,
+      "points": 18,
+      "true_shooting_pct": 51.72,
+      "effective_field_goal_pct": 53.85,
+      "game_id": "2024-03-10_GLO_vs_PLY",
+      "game_date": "2024-03-10",
+      "team": "Gloucester City Kings",
+      "opponent": "Plymouth Marjons",
+      "record_id": "2024-03-10_GLO_vs_PLY_Fraser_MacDonald"
+    }
+  ]
+}
