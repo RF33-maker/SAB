@@ -242,39 +242,24 @@ def push_to_airtable(players):
             print(f"❌ Airtable error for {player['name']}: {resp.text}")
 
 
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return jsonify({"status": "ok", "message": "Stats processor ready"})
+
+@app.route('/stats/<filename>')
+def get_stats(filename):
+    try:
+        data = extract_player_stats(f"{filename}.pdf")
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 def main():
-    import sys
-    import os
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("pdf", help="Path to the FIBA LiveStats PDF")
-    parser.add_argument("--webhook", help="Optional webhook URL to send the JSON")
-
-    # 👇 Add default if no arguments (for Replit Run button)
-    if len(sys.argv) == 1:
-        test_pdf = "game_test.pdf"
-        if not os.path.exists(test_pdf):
-            print(f"❌ Test file '{test_pdf}' not found.")
-            return
-        sys.argv += [test_pdf]
-
-    args = parser.parse_args()
-
-    data = extract_player_stats(args.pdf)
-
-    # … save JSON, webhook, etc. …
-    push_to_airtable(data["players"])
-
-    # Save locally
-    output_path = args.pdf.replace(".pdf", ".json")
-    with open(output_path, "w") as f:
-        json.dump(data, f, indent=2)
-    print(f"✅ Saved JSON to {output_path}")
-
-    if args.webhook:
-        response = requests.post(args.webhook, json=data)
-        print(f"📬 Webhook response: {response.status_code} - {response.text}")
-
+    app.run(host='0.0.0.0', port=5000)
 
 if __name__ == "__main__":
     main()
