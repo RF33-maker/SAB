@@ -142,6 +142,10 @@ def chat():
         # If nothing useful happened
         return jsonify({"error": "❌ No tool call triggered."}), 400
 
+    except Exception as e:
+        logging.error("❌ Error in /chat route:", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 @query_bp.route('/check_summary', methods=['POST'])
 @limiter.limit("60 per minute")
