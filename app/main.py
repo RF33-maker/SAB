@@ -30,5 +30,5 @@ if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.DEBUG)
     print("🚀 Flask app is running...")
-    flask_app.run(host="0.0.0.0", port=5000, debug=True)
+    flask_app.run(host="0.0.0.0", port=5000, debug=False)
 
