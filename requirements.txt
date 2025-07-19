@@ -31,7 +31,7 @@ multidict==6.4.3
 openai==1.75.0
 ordered-set==4.1.0
 packaging==24.2
-pdfplumber==0.9.0 
+pdfplumber==0.11.0 
 pluggy==1.5.0
 postgrest==1.0.1
 propcache==0.3.1
