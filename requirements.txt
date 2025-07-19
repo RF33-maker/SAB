@@ -9,10 +9,12 @@ attrs==25.3.0
 Deprecated==1.2.18
 deprecation==2.1.0
 distro==1.9.0
+Flask==3.0.3
 flask-cors==5.0.1
 Flask-Limiter==3.12
 frozenlist==1.6.0
 gotrue==2.12.0
+gunicorn==22.0.0
 h11==0.14.0
 h2==4.2.0
 hpack==4.1.0
