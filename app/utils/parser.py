@@ -13,7 +13,6 @@ def log_to_file(msg):
         f.write(f"[{datetime.utcnow().isoformat()}] {msg}\n")
 
 def extract_player_stats(pdf_file, league_id):
-    from app.utils.helpers import get_val
 
     log_to_file("🛠 Starting PDF parse...")
 
@@ -62,27 +61,33 @@ def extract_player_stats(pdf_file, league_id):
     players = []
 
     for i, stat_table in enumerate(stat_tables):
-        if len(stat_table) < 2:
-            log_to_file("⚠️ Skipping short stat table")
+        # Defensive check: skip short or malformed tables
+        if len(stat_table) < 3:
+            log_to_file("⚠️ Skipping table — not enough rows to build header + data")
             continue
 
-        team_name = team if i == 0 else opponent
-        opponent_name = opponent if i == 0 else team
-
         df = pd.DataFrame(stat_table)
-        header1, header2 = df.iloc[0], df.iloc[1]
-        headers = [" ".join(filter(None, [h1, h2])).strip() for h1, h2 in zip(header1, header2)]
 
-        for j, col in enumerate(headers):
-            if col == "%":
-                prev = headers[j - 1]
-                if "2 Points" in prev: headers[j] = "2 Points %"
-                elif "3 Points" in prev: headers[j] = "3 Points %"
-                elif "Free Throws" in prev: headers[j] = "Free Throws %"
+        header1 = df.iloc[0].fillna("").astype(str)
+        header2 = df.iloc[1].fillna("").astype(str)
+
+        headers = []
+        for h1, h2 in zip(header1, header2):
+            combined = f"{h1} {h2}".strip()
+            headers.append(combined or h1 or h2)
+
+        log_to_file(f"🧩 Flattened headers:\n{headers}")
+
+        if "Min" not in headers:
+            log_to_file("⚠️ Skipping table — 'Min' column not found")
+            continue
 
         df.columns = headers
         df = df[2:].reset_index(drop=True)
         df = df[df["Min"] != "DNP"]
+
+        team_name = team if i == 0 else opponent
+        opponent_name = opponent if i == 0 else team
 
         for _, row in df.iterrows():
             try:
@@ -109,6 +114,15 @@ def extract_player_stats(pdf_file, league_id):
                 ast_to = round(assists / turnovers, 2) if turnovers else 0
 
                 record_id = f"{game_id}_{player_name.replace(' ', '_')}"
+
+                # Fix ambiguous % headers
+                for j, col in enumerate(headers):
+                    if col == "%":
+                        prev = headers[j - 1]
+                        if "2 Points" in prev: headers[j] = "2 Points %"
+                        elif "3 Points" in prev: headers[j] = "3 Points %"
+                        elif "Free Throws" in prev: headers[j] = "Free Throws %"
+                        else: headers[j] = f"{prev} %"
 
                 players.append({
                     "name": player_name,
@@ -158,5 +172,3 @@ def extract_player_stats(pdf_file, league_id):
 
     log_to_file(f"✅ Parsed {len(players)} players from {team} vs {opponent}")
     return {"game_id": game_id, "team": team, "players": players}
-
-
