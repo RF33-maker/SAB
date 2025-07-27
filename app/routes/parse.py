@@ -71,6 +71,8 @@ def handle_parse():
             print("❌ No players returned from parser.")
             return jsonify({"error": "No player data extracted from PDF"}), 400
 
+
+
         # 📦 Add metadata to player rows
         for player in players:
             player["user_id"] = user_id

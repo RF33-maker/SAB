@@ -5,7 +5,7 @@ import os
 # ✅ Set up Supabase and OpenAI clients
 supabase = create_client(
     os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_SERVICE_ROLE"]
+    os.environ["SUPABASE_KEY"]
 )
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
