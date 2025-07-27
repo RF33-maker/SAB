@@ -38,7 +38,6 @@ def handle_parse():
         log_to_file(f"[📥] Parsing file for user: {user_id}")
         log_to_file(f"[📄] File path: {file_path}")
 
-        # Step 1: Download from Supabase
         try:
             response = supabase.storage.from_("user-uploads").download(file_path)
         except Exception as e:
@@ -51,14 +50,13 @@ def handle_parse():
 
         log_to_file("✅ Supabase file response received")
 
-        # Step 2: Read into memory
         try:
             pdf_file = io.BytesIO(response)
         except Exception as e:
             log_to_file(f"❌ Writing to local file failed: {e}")
             return jsonify({"error": f"Write failed: {str(e)}"}), 500
 
-        # Step 3: Parse PDF
+        # 👇 Parse the PDF and return both players and game info
         try:
             result = extract_player_stats(pdf_file, league_id)
         except Exception as e:
@@ -66,36 +64,45 @@ def handle_parse():
             return jsonify({"error": f"Parse failed: {str(e)}"}), 500
 
         players = result.get("players", [])
+        game = result.get("game", {})
 
         log_to_file(f"✅ Parsed player count: {len(players)}")
         if not players:
             log_to_file("❌ No players returned from parser.")
             return jsonify({"error": "No player data extracted from PDF"}), 400
 
-        log_to_file("🧪 Player example:\n" + json.dumps(players[0], indent=2))
-
-        # Step 4: Add metadata
+        # 📦 Add metadata to player rows
         for player in players:
             player["user_id"] = user_id
             player["league_id"] = league_id
             player["is_public"] = True
 
-        # Step 5: Insert into Supabase
+        # 📦 Add metadata to game row
+        game["league_id"] = league_id
+        game["pdf_url"] = file_path
+
+        # ✅ Insert game first
+        try:
+            game_response = supabase.table("games").insert(game).execute()
+            log_to_file(f"📦 Game insert response: {game_response}")
+        except Exception as e:
+            log_to_file(f"❌ Game insert failed: {e}")
+            return jsonify({"error": f"Game insert failed: {str(e)}"}), 500
+
+        # ✅ Then insert players
         try:
             insert_response = supabase.table("player_stats").insert(players).execute()
-            log_to_file(f"📥 Insert response: {insert_response}")
+            log_to_file(f"📥 Player insert response: {insert_response}")
         except Exception as e:
-            log_to_file(f"❌ Supabase insert failed: {e}")
-            return jsonify({"error": f"Insert failed: {str(e)}"}), 500
+            log_to_file(f"❌ Player insert failed: {e}")
+            return jsonify({"error": f"Player insert failed: {str(e)}"}), 500
 
-        if getattr(insert_response, "error", None):
-            raise Exception(insert_response.error)
-
-        log_to_file(f"🎯 Successfully inserted {len(players)} records.")
+        log_to_file(f"🎯 Successfully inserted {len(players)} players and 1 game.")
         return jsonify({
             "status": "success",
             "records_added": len(players),
-            "example": players[0]
+            "example": players[0],
+            "game_id": game.get("id")
         })
 
     except Exception as e:

@@ -1,101 +1,72 @@
-
-[2025-06-11T16:52:59.950253] 🔧 Logging is working.
-[2025-06-11T16:53:02.715400] 🔧 Logging is working.
-[2025-06-12T12:20:25.410919] 🔧 Logging is working.
-[2025-06-12T12:20:29.178777] 🔧 Logging is working.
-[2025-06-12T13:17:28.455366] 🔧 Logging is working.
-[2025-06-12T16:44:34.380032] 🔧 Logging is working.
-[2025-06-12T16:44:36.922420] 🔧 Logging is working.
-[2025-06-12T17:00:12.746445] 🔧 Logging is working.
-[2025-06-12T17:01:02.398449] 🔧 Logging is working.
-[2025-06-12T17:01:07.011876] 🔧 Logging is working.
-[2025-06-12T17:01:37.548991] 🔧 Logging is working.
-[2025-06-12T17:01:44.351284] 🔧 Logging is working.
-[2025-06-12T17:01:49.707100] 🔧 Logging is working.
-[2025-06-12T17:02:03.182576] 🔧 Logging is working.
-[2025-06-12T17:02:11.247707] 🔧 Logging is working.
-[2025-06-12T22:19:06.440720] 🔧 Logging is working.
-[2025-06-12T22:19:09.146579] 🔧 Logging is working.
-[2025-06-12T22:34:33.761425] 🔧 Logging is working.
-[2025-06-12T22:40:22.954401] 🔧 Logging is working.
-[2025-06-12T22:40:29.477977] 🔧 Logging is working.
-[2025-06-12T22:40:35.776989] 🔧 Logging is working.
-[2025-06-12T23:06:18.137304] 🔧 Logging is working.
-[2025-06-12T23:06:19.803856] 🔧 Logging is working.
-[2025-06-12T23:06:54.439304] 🔧 Logging is working.
-[2025-06-12T23:18:05.139500] 🔧 Logging is working.
-[2025-06-12T23:18:11.474001] 🔧 Logging is working.
-[2025-06-12T23:18:25.104224] 🔧 Logging is working.
-[2025-06-12T23:18:27.905718] 🔧 Logging is working.
-[2025-06-12T23:24:29.856938] 🔧 Logging is working.
-[2025-06-12T23:32:58.057853] 🔧 Logging is working.
-[2025-06-12T23:32:59.722498] 🔧 Logging is working.
-[2025-06-12T23:33:14.298587] 🧪 test endpoint was hit
-[2025-06-12T23:33:42.742678] 🔧 Logging is working.
-[2025-06-12T23:33:45.231935] 🔧 Logging is working.
-[2025-06-12T23:46:47.876307] 🔧 Logging is working.
-[2025-06-12T23:46:57.332880] 🔧 Logging is working.
-[2025-06-12T23:46:58.951359] 🔧 Logging is working.
-[2025-06-17T18:22:17.354926] 🔧 Logging is working.
-[2025-06-17T18:22:20.255831] 🔧 Logging is working.
-[2025-06-17T18:34:41.562024] 🔧 Logging is working.
-[2025-06-17T18:34:45.846936] 🔧 Logging is working.
-[2025-06-17T18:34:47.713999] 🔧 Logging is working.
-[2025-06-17T18:37:44.455818] 🔧 Logging is working.
-[2025-06-17T18:37:52.330962] 🔧 Logging is working.
-[2025-06-17T19:18:45.205686] 🔧 Logging is working.
-[2025-06-17T19:18:47.583170] 🔧 Logging is working.
-[2025-06-17T20:07:38.030381] 🔧 Logging is working.
-[2025-06-17T20:07:52.659210] 🔧 Logging is working.
-[2025-06-17T20:07:58.056814] 🔧 Logging is working.
-[2025-06-17T20:08:06.116112] 🔧 Logging is working.
-[2025-06-17T20:33:46.278381] 🔧 Logging is working.
-[2025-06-17T21:35:34.951262] 🔧 Logging is working.
-[2025-06-17T21:49:46.961250] 🔧 Logging is working.
-[2025-06-17T21:50:05.608646] 🔧 Logging is working.
-[2025-06-17T21:50:21.574525] 🔧 Logging is working.
-[2025-06-19T11:07:09.948852] 🔧 Logging is working.
-[2025-06-19T11:07:12.814095] 🔧 Logging is working.
-[2025-06-19T11:08:53.229905] 🔧 Logging is working.
-[2025-06-19T11:12:21.102039] 🔧 Logging is working.
-[2025-06-19T11:12:23.241708] 🔧 Logging is working.
-[2025-06-19T11:27:31.384568] 🔧 Logging is working.
-[2025-06-19T11:27:39.789311] 🔧 Logging is working.
-[2025-06-19T11:27:48.841889] 🔧 Logging is working.
-[2025-06-19T11:29:07.558002] 🔧 Logging is working.
-[2025-06-19T11:30:14.004752] 🔧 Logging is working.
-[2025-06-19T11:30:16.281533] 🔧 Logging is working.
-[2025-06-19T12:30:33.710837] 🔧 Logging is working.
-[2025-06-19T12:30:36.475299] 🔧 Logging is working.
-[2025-06-19T19:11:31.228619] 🔧 Logging is working.
-[2025-06-19T19:11:33.736862] 🔧 Logging is working.
-[2025-06-19T20:01:34.674641] 🔧 Logging is working.
-[2025-06-19T20:01:38.903469] 🔧 Logging is working.
-[2025-06-19T20:07:35.132898] 🔧 Logging is working.
-[2025-06-19T20:08:18.463687] 🔧 Logging is working.
-[2025-06-19T20:08:22.619825] 🔧 Logging is working.
-[2025-06-19T20:09:36.290037] 🔧 Logging is working.
-[2025-06-19T20:09:42.156578] 🔧 Logging is working.
-[2025-06-20T09:54:38.507981] 🔧 Logging is working.
-[2025-06-20T09:54:41.657223] 🔧 Logging is working.
-[2025-06-20T09:55:36.763828] 🔧 Logging is working.
-[2025-06-20T09:55:40.943696] 🔧 Logging is working.
-[2025-06-20T10:00:38.132203] 🔧 Logging is working.
-[2025-06-20T10:01:34.586475] 🔧 Logging is working.
-[2025-06-20T10:02:18.566492] 🔧 Logging is working.
-[2025-06-20T10:02:21.122530] 🔧 Logging is working.
-[2025-06-20T10:04:18.588801] 🔧 Logging is working.
-[2025-06-20T10:04:27.095488] 🔧 Logging is working.
-[2025-06-20T10:04:28.921285] 🔧 Logging is working.
-[2025-06-20T10:10:26.222751] 🔧 Logging is working.
-[2025-06-20T10:10:30.333012] 🔧 Logging is working.
-[2025-06-23T10:13:15.627390] 🔧 Logging is working.
-[2025-06-23T10:13:18.752479] 🔧 Logging is working.
-[2025-06-23T10:19:13.911238] 🔧 Logging is working.
-[2025-06-23T13:28:33.121985] 🔧 Logging is working.
-[2025-06-23T13:33:42.803574] 🔧 Logging is working.
-[2025-06-23T13:35:00.906005] 🔧 Logging is working.
-[2025-06-23T13:35:06.741103] 🔧 Logging is working.
-[2025-06-23T13:35:48.577752] 🔧 Logging is working.
-[2025-06-23T17:54:46.727480] 🔧 Logging is working.
-[2025-07-12T11:09:27.870305] 🔧 Logging is working.
+[2025-07-25T14:15:03.421140] 🔧 Logging is working.
+[2025-07-25T14:17:15.979384] 🔧 Logging is working.
+[2025-07-25T14:17:17.677301] 🔧 Logging is working.
+[2025-07-25T14:22:43.496130] 🔧 Logging is working.
+[2025-07-25T14:22:49.401696] 🔧 Logging is working.
+[2025-07-25T14:22:51.526129] 🔧 Logging is working.
+[2025-07-25T14:30:59.995697] 🔧 Logging is working.
+[2025-07-25T14:31:09.677257] 🔧 Logging is working.
+[2025-07-25T14:31:11.319959] 🔧 Logging is working.
+[2025-07-25T14:33:35.671235] 🔧 Logging is working.
+[2025-07-25T14:33:37.854921] 🔧 Logging is working.
+[2025-07-25T14:37:32.707564] 🔧 Logging is working.
+[2025-07-25T14:37:34.297189] 🔧 Logging is working.
+[2025-07-25T14:37:51.498410] [📥] Parsing file for user: 02fbd7a1-c160-42aa-9017-e7197b85975b
+[2025-07-25T14:37:51.498720] [📄] File path: 02fbd7a1-c160-42aa-9017-e7197b85975b/m1_score_ban_vs_eth_30_june.pdf
+[2025-07-25T14:37:52.512302] ✅ Supabase file response received
+[2025-07-25T14:38:06.855497] 🚨 extract_player_stats error: ❌ No valid player rows were parsed.
+[2025-07-25T14:38:44.887374] 🔧 Logging is working.
+[2025-07-25T14:38:48.997591] 🔧 Logging is working.
+[2025-07-25T14:38:52.688442] 🔧 Logging is working.
+[2025-07-25T14:39:13.728634] [📥] Parsing file for user: 02fbd7a1-c160-42aa-9017-e7197b85975b
+[2025-07-25T14:39:13.728834] [📄] File path: 02fbd7a1-c160-42aa-9017-e7197b85975b/m2_box_score_bmc_vs_mpb_30_june.pdf
+[2025-07-25T14:39:14.640519] ✅ Supabase file response received
+[2025-07-25T14:39:28.187991] 🚨 extract_player_stats error: ❌ No valid player rows were parsed.
+[2025-07-25T15:01:28.160014] 🔧 Logging is working.
+[2025-07-25T15:02:08.900460] [📥] Parsing file for user: 02fbd7a1-c160-42aa-9017-e7197b85975b
+[2025-07-25T15:02:08.900608] [📄] File path: 02fbd7a1-c160-42aa-9017-e7197b85975b/m2_box_score_bmc_vs_mpb_30_june.pdf
+[2025-07-25T15:02:09.126736] ✅ Supabase file response received
+[2025-07-25T15:02:22.610237] ✅ Parsed player count: 17
+[2025-07-25T15:02:22.610438] 🧪 Player example:
+{
+  "name": "Ruikun Hu (C)",
+  "number": "6",
+  "minutes_played": "29:37",
+  "field_goals_made": 2,
+  "field_goals_attempted": 6,
+  "field_goal_percent": 0.0,
+  "two_pt_made": 1,
+  "two_pt_attempted": 3,
+  "two_pt_percent": 33.3,
+  "three_pt_made": 1,
+  "three_pt_attempted": 3,
+  "three_pt_percent": 33.3,
+  "free_throws_made": 0,
+  "free_throws_attempted": 1,
+  "free_throw_percent": 0.0,
+  "rebounds_o": 3,
+  "rebounds_d": 3,
+  "rebounds_total": 6,
+  "assists": 0,
+  "turnovers": 0,
+  "assist_turnover_ratio": 0,
+  "steals": 0,
+  "blocks": 0,
+  "personal_fouls": 0,
+  "fouls_drawn": 1,
+  "plus_minus": 7,
+  "points": 5,
+  "true_shooting_percent": 38.82,
+  "effective_fg_percent": 41.67,
+  "game_id": "2025-06-30_BRI_vs_EMP",
+  "game_date": "2025-06-30",
+  "team": "Empees B",
+  "opponent": "Bristol Mooncakes",
+  "record_id": "2025-06-30_BRI_vs_EMP_Ruikun_Hu_(C)",
+  "league_id": "f118e1db-06b1-43ee-928d-6c1eb98f186e",
+  "created_at": "2025-07-25T15:02:22.602675",
+  "is_public": true
+}
+[2025-07-25T15:02:23.046664] 📥 Insert response: data=[{'id': '8c331573-9a6b-47c1-972c-087c6000be7c', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Ruikun_Hu_(C)', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Ruikun Hu (C)', 'number': 6, 'minutes_played': '29:37', 'field_goals_made': 2, 'field_goals_attempted': 6, 'field_goal_percent': 0.0, 'two_pt_made': 1, 'two_pt_attempted': 3, 'two_pt_percent': 33.3, 'three_pt_made': 1, 'three_pt_attempted': 3, 'three_pt_percent': 33.3, 'free_throws_made': 0, 'free_throws_attempted': 1, 'free_throw_percent': 0.0, 'rebounds_o': 3, 'rebounds_d': 3, 'rebounds_total': 6, 'assists': 0, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 1, 'plus_minus': 7, 'points': 5, 'true_shooting_percent': 38.82, 'effective_fg_percent': 41.67, 'created_at': '2025-07-25T15:02:22.602675+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': 'ceaf7fae-3c59-42b5-bf83-93e39ef1ff17', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Yijiahua_Wu', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Yijiahua Wu', 'number': 15, 'minutes_played': '30:48', 'field_goals_made': 7, 'field_goals_attempted': 9, 'field_goal_percent': 0.0, 'two_pt_made': 5, 'two_pt_attempted': 6, 'two_pt_percent': 83.3, 'three_pt_made': 2, 'three_pt_attempted': 3, 'three_pt_percent': 66.7, 'free_throws_made': 1, 'free_throws_attempted': 3, 'free_throw_percent': 33.3, 'rebounds_o': 0, 'rebounds_d': 3, 'rebounds_total': 3, 'assists': 0, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 2, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 5, 'plus_minus': 11, 'points': 17, 'true_shooting_percent': 82.36, 'effective_fg_percent': 88.89, 'created_at': '2025-07-25T15:02:22.603035+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '1706f1d9-29a3-4195-a827-bbdfd3604d9a', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Yichen_Li', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Yichen Li', 'number': 20, 'minutes_played': '29:22', 'field_goals_made': 1, 'field_goals_attempted': 1, 'field_goal_percent': 0.0, 'two_pt_made': 1, 'two_pt_attempted': 1, 'two_pt_percent': 100.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 2, 'free_throws_attempted': 4, 'free_throw_percent': 50.0, 'rebounds_o': 3, 'rebounds_d': 3, 'rebounds_total': 6, 'assists': 0, 'turnovers': 1, 'assist_turnover_ratio': 0.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 4, 'fouls_drawn': 2, 'plus_minus': 6, 'points': 4, 'true_shooting_percent': 72.46, 'effective_fg_percent': 100.0, 'created_at': '2025-07-25T15:02:22.603324+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '18b9ce82-471a-4747-82b0-77577d3abf26', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_peilin_zou', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'peilin zou', 'number': 24, 'minutes_played': '32:00', 'field_goals_made': 3, 'field_goals_attempted': 12, 'field_goal_percent': 0.0, 'two_pt_made': 3, 'two_pt_attempted': 11, 'two_pt_percent': 27.3, 'three_pt_made': 0, 'three_pt_attempted': 1, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 4, 'free_throw_percent': 0.0, 'rebounds_o': 2, 'rebounds_d': 0, 'rebounds_total': 2, 'assists': 1, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 2, 'blocks': 0, 'personal_fouls': 2, 'fouls_drawn': 2, 'plus_minus': 9, 'points': 6, 'true_shooting_percent': 21.8, 'effective_fg_percent': 25.0, 'created_at': '2025-07-25T15:02:22.603606+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': 'b66dab9e-6c98-494b-9c2d-fd12b5b5dfac', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Zehua_Liu', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Zehua Liu', 'number': 45, 'minutes_played': '28:37', 'field_goals_made': 2, 'field_goals_attempted': 5, 'field_goal_percent': 0.0, 'two_pt_made': 2, 'two_pt_attempted': 2, 'two_pt_percent': 100.0, 'three_pt_made': 0, 'three_pt_attempted': 3, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 2, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 6, 'rebounds_total': 6, 'assists': 1, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 1, 'blocks': 0, 'personal_fouls': 4, 'fouls_drawn': 1, 'plus_minus': 12, 'points': 4, 'true_shooting_percent': 34.01, 'effective_fg_percent': 40.0, 'created_at': '2025-07-25T15:02:22.603902+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '3af2b6a4-0051-4d2f-9c3d-4a3faa03adc6', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_zihan_chen', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'zihan chen', 'number': 51, 'minutes_played': '09:36', 'field_goals_made': 0, 'field_goals_attempted': 4, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 2, 'two_pt_percent': 0.0, 'three_pt_made': 0, 'three_pt_attempted': 2, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 0, 'rebounds_total': 0, 'assists': 0, 'turnovers': 1, 'assist_turnover_ratio': 0.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 0, 'plus_minus': 0, 'points': 0, 'true_shooting_percent': 0.0, 'effective_fg_percent': 0.0, 'created_at': '2025-07-25T15:02:22.604193+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '12a57275-651c-4bd7-9224-ad5457f58499', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Jack_Lewis', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Jack Lewis', 'number': 0, 'minutes_played': '13:41', 'field_goals_made': 0, 'field_goals_attempted': 0, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 0, 'two_pt_percent': 0.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 0, 'rebounds_total': 0, 'assists': 0, 'turnovers': 1, 'assist_turnover_ratio': 0.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 1, 'fouls_drawn': 0, 'plus_minus': -6, 'points': 0, 'true_shooting_percent': 0, 'effective_fg_percent': 0, 'created_at': '2025-07-25T15:02:22.607221+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': 'a033a2b8-82f4-446b-a128-270d8e60bde1', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Edmond_Iniwan', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Edmond Iniwan', 'number': 3, 'minutes_played': '09:51', 'field_goals_made': 1, 'field_goals_attempted': 1, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 0, 'two_pt_percent': 0.0, 'three_pt_made': 1, 'three_pt_attempted': 1, 'three_pt_percent': 100.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 0, 'rebounds_total': 0, 'assists': 0, 'turnovers': 1, 'assist_turnover_ratio': 0.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 3, 'fouls_drawn': 0, 'plus_minus': -6, 'points': 3, 'true_shooting_percent': 150.0, 'effective_fg_percent': 150.0, 'created_at': '2025-07-25T15:02:22.607502+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '15f32519-fe38-420c-a50a-99040d265fcb', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Mark_Rawlings_(C)', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Mark Rawlings (C)', 'number': 5, 'minutes_played': '16:55', 'field_goals_made': 0, 'field_goals_attempted': 1, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 1, 'two_pt_percent': 0.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 1, 'rebounds_total': 1, 'assists': 0, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 0, 'plus_minus': -8, 'points': 0, 'true_shooting_percent': 0.0, 'effective_fg_percent': 0.0, 'created_at': '2025-07-25T15:02:22.607777+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '1a25050c-3456-40ea-9335-714aa084f374', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Elliot_Choi', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Elliot Choi', 'number': 7, 'minutes_played': '08:08', 'field_goals_made': 2, 'field_goals_attempted': 3, 'field_goal_percent': 0.0, 'two_pt_made': 2, 'two_pt_attempted': 3, 'two_pt_percent': 66.7, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 0, 'rebounds_total': 0, 'assists': 0, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 1, 'blocks': 0, 'personal_fouls': 2, 'fouls_drawn': 0, 'plus_minus': 1, 'points': 4, 'true_shooting_percent': 66.67, 'effective_fg_percent': 66.67, 'created_at': '2025-07-25T15:02:22.608074+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '56188ebd-cce1-4221-9d10-384b1b086b2e', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Alfie_Searle', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Alfie Searle', 'number': 9, 'minutes_played': '15:14', 'field_goals_made': 1, 'field_goals_attempted': 5, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 4, 'two_pt_percent': 0.0, 'three_pt_made': 1, 'three_pt_attempted': 1, 'three_pt_percent': 100.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 1, 'rebounds_total': 1, 'assists': 1, 'turnovers': 1, 'assist_turnover_ratio': 1.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 0, 'plus_minus': -1, 'points': 3, 'true_shooting_percent': 30.0, 'effective_fg_percent': 30.0, 'created_at': '2025-07-25T15:02:22.608341+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '6ab99e2e-be47-42e3-aec2-72d2c095c980', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Reuben_Roach', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Reuben Roach', 'number': 12, 'minutes_played': '14:48', 'field_goals_made': 0, 'field_goals_attempted': 3, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 3, 'two_pt_percent': 0.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 0, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 5, 'rebounds_total': 5, 'assists': 1, 'turnovers': 2, 'assist_turnover_ratio': 0.5, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 1, 'plus_minus': -3, 'points': 0, 'true_shooting_percent': 0.0, 'effective_fg_percent': 0.0, 'created_at': '2025-07-25T15:02:22.608602+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '812cfe44-20bd-46f0-98d8-ce497ed42508', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Jamal_Khawaja', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Jamal Khawaja', 'number': 20, 'minutes_played': '13:20', 'field_goals_made': 2, 'field_goals_attempted': 4, 'field_goal_percent': 0.0, 'two_pt_made': 2, 'two_pt_attempted': 4, 'two_pt_percent': 50.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 2, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 3, 'rebounds_total': 3, 'assists': 1, 'turnovers': 2, 'assist_turnover_ratio': 0.5, 'steals': 0, 'blocks': 0, 'personal_fouls': 2, 'fouls_drawn': 1, 'plus_minus': -3, 'points': 4, 'true_shooting_percent': 40.98, 'effective_fg_percent': 50.0, 'created_at': '2025-07-25T15:02:22.608856+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '19807eb5-62d4-43d7-a5f8-7c8b7810dc9c', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Ryan_Brooks', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Ryan Brooks', 'number': 23, 'minutes_played': '17:12', 'field_goals_made': 3, 'field_goals_attempted': 5, 'field_goal_percent': 0.0, 'two_pt_made': 3, 'two_pt_attempted': 5, 'two_pt_percent': 60.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 1, 'free_throws_attempted': 1, 'free_throw_percent': 100.0, 'rebounds_o': 0, 'rebounds_d': 2, 'rebounds_total': 2, 'assists': 0, 'turnovers': 1, 'assist_turnover_ratio': 0.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 2, 'plus_minus': -6, 'points': 7, 'true_shooting_percent': 64.34, 'effective_fg_percent': 60.0, 'created_at': '2025-07-25T15:02:22.609141+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '1ae4bcfd-f0af-41b9-9ea0-055fe182ef54', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_malual_arop', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'malual arop', 'number': 41, 'minutes_played': '19:37', 'field_goals_made': 2, 'field_goals_attempted': 3, 'field_goal_percent': 0.0, 'two_pt_made': 2, 'two_pt_attempted': 3, 'two_pt_percent': 66.7, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 2, 'free_throws_attempted': 4, 'free_throw_percent': 50.0, 'rebounds_o': 1, 'rebounds_d': 3, 'rebounds_total': 4, 'assists': 2, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 0, 'blocks': 0, 'personal_fouls': 2, 'fouls_drawn': 3, 'plus_minus': -3, 'points': 6, 'true_shooting_percent': 63.03, 'effective_fg_percent': 66.67, 'created_at': '2025-07-25T15:02:22.609405+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '45c5851f-6c01-41cb-8191-08c0f9d1df71', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Ronalds_Kaulins-Atars', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Ronalds Kaulins-Atars', 'number': 42, 'minutes_played': '14:01', 'field_goals_made': 0, 'field_goals_attempted': 1, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 0, 'two_pt_percent': 0.0, 'three_pt_made': 0, 'three_pt_attempted': 1, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 4, 'free_throw_percent': 0.0, 'rebounds_o': 0, 'rebounds_d': 1, 'rebounds_total': 1, 'assists': 0, 'turnovers': 1, 'assist_turnover_ratio': 0.0, 'steals': 0, 'blocks': 0, 'personal_fouls': 0, 'fouls_drawn': 2, 'plus_minus': -6, 'points': 0, 'true_shooting_percent': 0.0, 'effective_fg_percent': 0.0, 'created_at': '2025-07-25T15:02:22.609663+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}, {'id': '91f240a3-0679-4d0f-8925-1f5e9993289e', 'user_id': '02fbd7a1-c160-42aa-9017-e7197b85975b', 'record_id': '2025-06-30_BRI_vs_EMP_Kieran_Walsh', 'game_id': '2025-06-30_BRI_vs_EMP', 'game_date': '2025-06-30', 'team': 'Empees B', 'opponent': 'Bristol Mooncakes', 'name': 'Kieran Walsh', 'number': 73, 'minutes_played': '17:13', 'field_goals_made': 0, 'field_goals_attempted': 0, 'field_goal_percent': 0.0, 'two_pt_made': 0, 'two_pt_attempted': 0, 'two_pt_percent': 0.0, 'three_pt_made': 0, 'three_pt_attempted': 0, 'three_pt_percent': 0.0, 'free_throws_made': 0, 'free_throws_attempted': 2, 'free_throw_percent': 0.0, 'rebounds_o': 1, 'rebounds_d': 0, 'rebounds_total': 1, 'assists': 1, 'turnovers': 0, 'assist_turnover_ratio': 0, 'steals': 0, 'blocks': 0, 'personal_fouls': 1, 'fouls_drawn': 1, 'plus_minus': -4, 'points': 0, 'true_shooting_percent': 0.0, 'effective_fg_percent': 0, 'created_at': '2025-07-25T15:02:22.609926+00:00', 'league_id': 'f118e1db-06b1-43ee-928d-6c1eb98f186e', 'is_public': True}] count=None
+[2025-07-25T15:02:23.047228] 🎯 Successfully inserted 17 records.
+[2025-07-25T20:45:54.972259] 🔧 Logging is working.

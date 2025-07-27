@@ -3,18 +3,17 @@ import pandas as pd
 import re
 from datetime import datetime
 from app.utils.helpers import get_val
+from app.utils.summary import generate_game_summary
+
+print("🐍 parser.py loaded")
+
 
 def log(msg):
     import sys
     print(msg, file=sys.stdout, flush=True)
 
-def log_to_file(msg):
-    with open("parse_log.txt", "a") as f:
-        f.write(f"[{datetime.utcnow().isoformat()}] {msg}\n")
-
 def extract_player_stats(pdf_file, league_id):
-
-    log_to_file("🛠 Starting PDF parse...")
+    print("🛠 Starting PDF parse...")
 
     try:
         with pdfplumber.open(pdf_file) as pdf:
@@ -22,7 +21,7 @@ def extract_player_stats(pdf_file, league_id):
                 raise ValueError("❌ PDF has no pages.")
 
             first_page_text = pdf.pages[0].extract_text()
-            log_to_file(f"📝 First page:\n{first_page_text}")
+            print(f"📝 First page:\n{first_page_text}")
 
             match = re.search(r"^(.*)\s\d+\s[–-]\s\d+\s(.*)$", first_page_text, re.MULTILINE)
             team = match.group(1).strip() if match else "Unknown Team"
@@ -42,9 +41,9 @@ def extract_player_stats(pdf_file, league_id):
                 if tables:
                     all_tables.extend(tables)
 
-            log_to_file(f"📑 Extracted {len(all_tables)} tables")
+            print(f"📑 Extracted {len(all_tables)} tables")
     except Exception as e:
-        log_to_file(f"❌ Failed to open or read PDF: {e}")
+        print(f"❌ Failed to open or read PDF: {e}")
         raise
 
     if not all_tables:
@@ -61,13 +60,11 @@ def extract_player_stats(pdf_file, league_id):
     players = []
 
     for i, stat_table in enumerate(stat_tables):
-        # Defensive check: skip short or malformed tables
         if len(stat_table) < 3:
-            log_to_file("⚠️ Skipping table — not enough rows to build header + data")
+            print("⚠️ Skipping table — not enough rows to build header + data")
             continue
 
         df = pd.DataFrame(stat_table)
-
         header1 = df.iloc[0].fillna("").astype(str)
         header2 = df.iloc[1].fillna("").astype(str)
 
@@ -76,11 +73,19 @@ def extract_player_stats(pdf_file, league_id):
             combined = f"{h1} {h2}".strip()
             headers.append(combined or h1 or h2)
 
-        log_to_file(f"🧩 Flattened headers:\n{headers}")
+        print(f"🧩 Flattened headers:\n{headers}")
 
         if "Min" not in headers:
-            log_to_file("⚠️ Skipping table — 'Min' column not found")
+            print("⚠️ Skipping table — 'Min' column not found")
             continue
+
+        for j, col in enumerate(headers):
+            if col == "%":
+                prev = headers[j - 1]
+                if "2 Points" in prev: headers[j] = "2 Points %"
+                elif "3 Points" in prev: headers[j] = "3 Points %"
+                elif "Free Throws" in prev: headers[j] = "Free Throws %"
+                else: headers[j] = f"{prev} %"
 
         df.columns = headers
         df = df[2:].reset_index(drop=True)
@@ -88,12 +93,16 @@ def extract_player_stats(pdf_file, league_id):
 
         team_name = team if i == 0 else opponent
         opponent_name = opponent if i == 0 else team
+        home_team = team
+        away_team = opponent
 
         for _, row in df.iterrows():
             try:
+                print(f"👤 Checking row: {row.to_dict()}")
                 player_name = (row.get("name") or row.get("Name") or "").strip()
                 jersey = str(row.get("No") or "")
                 if not player_name or "Totals" in jersey or "Coach" in jersey:
+                    print("⛔ Skipping row — missing player_name or unwanted No")
                     continue
 
                 def parse_made_attempts(val):
@@ -115,15 +124,6 @@ def extract_player_stats(pdf_file, league_id):
 
                 record_id = f"{game_id}_{player_name.replace(' ', '_')}"
 
-                # Fix ambiguous % headers
-                for j, col in enumerate(headers):
-                    if col == "%":
-                        prev = headers[j - 1]
-                        if "2 Points" in prev: headers[j] = "2 Points %"
-                        elif "3 Points" in prev: headers[j] = "3 Points %"
-                        elif "Free Throws" in prev: headers[j] = "Free Throws %"
-                        else: headers[j] = f"{prev} %"
-
                 players.append({
                     "name": player_name,
                     "number": re.sub(r"\D", "", jersey),
@@ -141,8 +141,8 @@ def extract_player_stats(pdf_file, league_id):
                     "free_throws_attempted": ft_atts,
                     "free_throw_percent": float(get_val(row, "Free Throws %", fallback=0)),
                     "rebounds_o": int(get_val(row, "Rebounds OR", "OR")),
-                    "rebounds_d": int(get_val(row, "Rebounds DR", "DR")),
-                    "rebounds_total": int(get_val(row, "Rebounds TOT", "TOT")),
+                    "rebounds_d": int(get_val(row, "DR", "DR")),
+                    "rebounds_total": int(get_val(row, "TOT", "TOT")),
                     "assists": assists,
                     "turnovers": turnovers,
                     "assist_turnover_ratio": ast_to,
@@ -158,17 +158,27 @@ def extract_player_stats(pdf_file, league_id):
                     "game_date": game_date,
                     "team": team_name,
                     "opponent": opponent_name,
+                    "home_team": home_team,
+                    "away_team": away_team,
                     "record_id": record_id,
                     "league_id": league_id,
                     "created_at": datetime.utcnow().isoformat(),
                     "is_public": True
                 })
             except Exception as err:
-                log_to_file(f"⚠️ Skipping row due to: {err}")
+                print(f"⚠️ Skipping row due to: {err}")
                 continue
 
     if not players:
         raise ValueError("❌ No valid player rows were parsed.")
 
-    log_to_file(f"✅ Parsed {len(players)} players from {team} vs {opponent}")
-    return {"game_id": game_id, "team": team, "players": players}
+    print(f"✅ Parsed {len(players)} players from {team} vs {opponent}")
+    return {
+        "game_id": game_id,
+        "game_date": game_date,
+        "home_team": home_team,
+        "away_team": away_team,
+        "team": team,
+        "opponent": opponent,
+        "players": players
+    }
