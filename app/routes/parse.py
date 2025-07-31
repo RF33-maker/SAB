@@ -1,10 +1,11 @@
 from flask import Blueprint, request, jsonify
 from app.utils.chat_data import supabase
 from app.utils.parser import extract_player_stats
+from app.utils.summary import generate_game_summary
 import traceback
 from datetime import datetime
 import io
-import json
+import fitz
 
 parse_bp = Blueprint("parse", __name__)
 
@@ -71,13 +72,13 @@ def handle_parse():
             print("❌ No players returned from parser.")
             return jsonify({"error": "No player data extracted from PDF"}), 400
 
-
-
         # 📦 Add metadata to player rows
         for player in players:
             player["user_id"] = user_id
             player["league_id"] = league_id
             player["is_public"] = True
+            player["is_home_player"] = player["team"] == game["home_team"]
+
 
         # 📦 Add metadata to game row
         game["league_id"] = league_id
@@ -100,6 +101,39 @@ def handle_parse():
             return jsonify({"error": f"Player insert failed: {str(e)}"}), 500
 
         print(f"🎯 Successfully inserted {len(players)} players and 1 game.")
+
+        # 🎯 Generate AI Summary
+        try:
+            # Step 1: Get top players (by points)
+            top_players = sorted(players, key=lambda p: p.get("points", 0), reverse=True)[:3]
+
+            # Step 2: Build the game_data dict for summary
+            game_data = {
+                "home_team": game.get("home_team"),
+                "away_team": game.get("away_team"),
+                "home_score": game.get("home_score"),
+                "away_score": game.get("away_score"),
+                "game_date": game.get("game_date"),
+                "top_players": top_players
+            }
+
+            # Step 3: Extract text from first page of the PDF
+            def extract_first_page_text(pdf_file_obj):
+                doc = fitz.open(stream=pdf_file_obj, filetype="pdf")
+                text = doc[0].get_text()
+                doc.close()
+                return text
+
+            pdf_file.seek(0)
+            pdf_text = extract_first_page_text(pdf_file)
+
+            # Step 4: Generate and store summary
+            generate_game_summary(game_data, pdf_text)
+            print("✅ AI Summary generated and saved.")
+
+        except Exception as summary_error:
+            print(f"⚠️ Failed to generate AI summary: {summary_error}")
+
         return jsonify({
             "status": "success",
             "records_added": len(players),
@@ -108,7 +142,6 @@ def handle_parse():
         })
 
     except Exception as e:
-        import traceback
         traceback.print_exc()
         print(f"🔥 Fatal error in /api/parse: {str(e)}")
         return jsonify({"error": f"Fatal error: {str(e)}"}), 500

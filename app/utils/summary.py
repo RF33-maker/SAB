@@ -11,13 +11,30 @@ supabase = create_client(
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 # ✅ Function to generate and store a game summary
-def generate_game_summary(game_data):
-    prompt = f"""Write a short recap for a basketball game from the perspective of a high level coach, be professional.
-- {game_data['home_team']} {game_data['home_score']} vs {game_data['away_team']} {game_data['away_score']} on {game_data['game_date']}.
-Top players:
-{chr(10).join([f"- {p['name']} ({p['team']}): {p['points']} pts, {p['rebounds']} reb" for p in game_data['top_players']])}
-Write it like a league recap, under 100 words."""
+def generate_game_summary(game_data, pdf_text=None):
+    # Format player stats
+    top_players_section = "\n".join([
+        f"- {p['name']} ({p['team']}): {p['points']} pts, {p['rebounds_total']} reb"
+        for p in game_data.get('top_players', [])
+    ])
 
+    # Optional: add trimmed PDF text (limit to ~1,500 characters)
+    additional_context = f"\n\nAdditional context from the official report:\n{pdf_text[:1500]}" if pdf_text else ""
+
+    # 🧠 Construct the prompt
+    prompt = f"""Write a short professional recap for a basketball game from the perspective of a high-level coach. 
+It should be clear and suitable for a league website, no more than 100 words.
+
+Game Details:
+- {game_data['home_team']} {game_data['home_score']} vs {game_data['away_team']} {game_data['away_score']}
+- Date: {game_data['game_date']}
+
+Top Players:
+{top_players_section}
+{additional_context}
+"""
+
+    # 🔁 Call OpenAI
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
@@ -26,7 +43,9 @@ Write it like a league recap, under 100 words."""
         ]
     )
 
-    summary = response.choices[0].message.content.strip()
+    content = response.choices[0].message.content if response.choices and response.choices[0].message.content else ""
+    summary = content.strip()
+
 
     # ✅ Save to Supabase
     supabase.table("summaries").insert({
@@ -38,5 +57,3 @@ Write it like a league recap, under 100 words."""
     }).execute()
 
     return summary
-
-
