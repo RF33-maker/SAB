@@ -128,8 +128,10 @@ def handle_parse():
             pdf_text = extract_first_page_text(pdf_file)
 
             # Step 4: Generate and store summary
-            generate_game_summary(game_data, pdf_text)
+            summary = generate_game_summary(game_data, players)
             print("✅ AI Summary generated and saved.")
+            print("📝 AI Summary Output:\n", summary)
+
 
         except Exception as summary_error:
             print(f"⚠️ Failed to generate AI summary: {summary_error}")
