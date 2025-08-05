@@ -13,7 +13,7 @@ from app.utils.chat_data import supabase
 from flask_cors import CORS
 from threading import Thread
 from app.utils.chat_functions import create_assistant, store_player_data
-from app.utils.voiceflow_tools import get_player_stats, get_top_players
+from app.utils.voiceflow_tools import get_player_stats, get_top_players, get_game_summary, get_team_analysis, get_advanced_insights
 from openai.types.chat import ChatCompletionMessageParam
 
 # Blueprint setup
@@ -98,6 +98,15 @@ def chat():
                     
             elif tool_name == "get_top_players":
                 raw_output = asyncio.run(get_top_players(**args))
+                
+            elif tool_name == "get_game_summary":
+                raw_output = asyncio.run(get_game_summary(**args))
+                
+            elif tool_name == "get_team_analysis":
+                raw_output = asyncio.run(get_team_analysis(**args))
+                
+            elif tool_name == "get_advanced_insights":
+                raw_output = asyncio.run(get_advanced_insights(**args))
 
                 # Start GPT summary thread (optional)
                 def run_gpt_summary():
@@ -140,6 +149,12 @@ def chat():
                     "response": raw_output,
                     "thread_id": thread_id,
                     "gpt_status": "processing"
+                })
+            else:
+                # For other tools, return the response directly
+                return jsonify({
+                    "response": raw_output,
+                    "thread_id": thread_id
                 })
 
         # If nothing useful happened
