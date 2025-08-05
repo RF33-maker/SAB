@@ -264,3 +264,121 @@ async def get_player_stats(
     
     return " ".join(results)
 
+
+async def get_top_players(
+    stat: str,
+    limit: Optional[int] = 5,
+    mode: Optional[str] = "latest",
+    user_message: Optional[str] = None
+):
+    """
+    Get top players in a specific stat category.
+    
+    Args:
+        stat: The stat to rank by (e.g., "points", "rebounds", "assists")
+        limit: Number of top players to return (default 5)
+        mode: "latest" (last game), "average" (per game), or "total" (season)
+        user_message: Original user query for context
+    """
+    
+    # Normalize the stat name
+    stat_key = normalize_stat(stat)
+    
+    # Infer mode from user message if not provided
+    if not mode and user_message:
+        msg = user_message.lower()
+        if any(kw in msg for kw in ["average", "per game", "typically"]):
+            mode = "average"
+        elif any(kw in msg for kw in ["total", "season", "overall"]):
+            mode = "total"
+        else:
+            mode = "latest"
+    
+    try:
+        # Get all player records from Supabase
+        from app.utils.chat_data import supabase
+        response = supabase.table("player_stats").select("*").order("game_date", desc=True).execute()
+        
+        if not response.data:
+            return "❌ No player data found in database."
+        
+        all_records = response.data
+        
+        # Group records by player
+        player_stats = {}
+        for record in all_records:
+            player_name = record.get("name")
+            if not player_name:
+                continue
+                
+            if player_name not in player_stats:
+                player_stats[player_name] = []
+            player_stats[player_name].append(record)
+        
+        # Calculate stat values for each player based on mode
+        player_rankings = []
+        
+        for player_name, records in player_stats.items():
+            if mode == "latest":
+                # Use most recent game
+                latest_record = records[0]  # Already sorted by date desc
+                stat_value = latest_record.get(stat_key, 0)
+                if stat_value is not None:
+                    player_rankings.append({
+                        "name": player_name,
+                        "value": float(stat_value),
+                        "team": latest_record.get("team", ""),
+                        "game_date": latest_record.get("game_date", "")
+                    })
+                    
+            elif mode == "average":
+                # Calculate per-game average
+                values = [float(r.get(stat_key, 0)) for r in records if r.get(stat_key) is not None]
+                if values:
+                    avg_value = sum(values) / len(values)
+                    player_rankings.append({
+                        "name": player_name,
+                        "value": round(avg_value, 2),
+                        "team": records[0].get("team", ""),
+                        "games": len(values)
+                    })
+                    
+            elif mode == "total":
+                # Calculate season total
+                values = [float(r.get(stat_key, 0)) for r in records if r.get(stat_key) is not None]
+                if values:
+                    total_value = sum(values)
+                    player_rankings.append({
+                        "name": player_name,
+                        "value": round(total_value, 2),
+                        "team": records[0].get("team", ""),
+                        "games": len(values)
+                    })
+        
+        # Sort by stat value (descending)
+        player_rankings.sort(key=lambda x: x["value"], reverse=True)
+        
+        # Limit results
+        top_players = player_rankings[:limit]
+        
+        if not top_players:
+            return f"❌ No valid data found for stat '{stat_key.replace('_', ' ')}'."
+        
+        # Format response
+        stat_display = stat_key.replace("_", " ").title()
+        mode_display = {"latest": "Latest Game", "average": "Per Game Average", "total": "Season Total"}[mode]
+        
+        results = [f"🏆 Top {len(top_players)} Players - {stat_display} ({mode_display}):\n"]
+        
+        for i, player in enumerate(top_players, 1):
+            if mode == "latest":
+                results.append(f"{i}. {player['name']} ({player['team']}) - {player['value']} ({player['game_date']})")
+            else:
+                results.append(f"{i}. {player['name']} ({player['team']}) - {player['value']} ({player['games']} games)")
+        
+        return "\n".join(results)
+        
+    except Exception as e:
+        print(f"❌ Error in get_top_players: {str(e)}")
+        return f"⚠️ Error retrieving top players for {stat_key.replace('_', ' ')}: {str(e)}"
+

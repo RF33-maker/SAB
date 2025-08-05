@@ -13,7 +13,7 @@ from app.utils.chat_data import supabase
 from flask_cors import CORS
 from threading import Thread
 from app.utils.chat_functions import create_assistant, store_player_data
-from app.utils.voiceflow_tools import get_player_stats
+from app.utils.voiceflow_tools import get_player_stats, get_top_players
 from openai.types.chat import ChatCompletionMessageParam
 
 # Blueprint setup
@@ -95,6 +95,9 @@ def chat():
                     store_player_data(thread_id, args.get("player_name"), records)
                 else:
                     raw_output = response
+                    
+            elif tool_name == "get_top_players":
+                raw_output = asyncio.run(get_top_players(**args))
 
                 # Start GPT summary thread (optional)
                 def run_gpt_summary():

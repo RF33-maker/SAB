@@ -78,6 +78,38 @@ def create_assistant(client):
                             "required": ["thread_id"]
                         }
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_top_players",
+                        "description": "Get the top players in a specific stat category (e.g., 'Who leads in rebounds?', 'Top 5 scorers')",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "stat": {
+                                    "type": "string",
+                                    "description": "The stat to rank players by (e.g., 'points', 'rebounds', 'assists', 'steals')"
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Number of top players to return (default 5, max 10)",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                },
+                                "mode": {
+                                    "type": "string",
+                                    "enum": ["latest", "average", "total"],
+                                    "description": "Whether to rank by latest game, per-game average, or season total"
+                                },
+                                "user_message": {
+                                    "type": "string",
+                                    "description": "The raw user query for inferring mode when not explicitly provided"
+                                }
+                            },
+                            "required": ["stat"]
+                        }
+                    }
                 }
             ]
 
@@ -105,7 +137,13 @@ def create_assistant(client):
                 - "What were his stats in the last match?" → omit stat/stat_list, mode = "latest"
                 - "Show me all his stats" → omit stat/stat_list
 
-                Never respond to performance or stat-related questions using your own words. Always call the tool.
+                🏆 Top Players Tool:
+                Use `get_top_players` for questions like:
+                - "Who leads in rebounds?" → stat = "rebounds", mode = "latest"
+                - "Top 5 scorers this season" → stat = "points", mode = "total", limit = 5
+                - "Best rebounders per game" → stat = "rebounds", mode = "average"
+
+                Never respond to performance or stat-related questions using your own words. Always call the appropriate tool.
                 """,
 
                 model="gpt-4-1106-preview",
