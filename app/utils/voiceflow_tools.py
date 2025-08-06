@@ -305,7 +305,66 @@ async def get_player_stats(
         return output, records
 
     
-    return " ".join(results)
+    # Create a conversational summary instead of listing each stat
+    if len(results) > 5:  # If we have many auto-generated stats, make it conversational
+        record = records[0]
+        pts = record.get("points", 0)
+        fg_made = record.get("field_goals_made", 0)
+        fg_att = record.get("field_goals_attempted", 0)
+        fg_pct = record.get("field_goal_percent", 0)
+        rebounds = record.get("rebounds_total", 0)
+        assists = record.get("assists", 0)
+        turnovers = record.get("turnovers", 0)
+        plus_minus = record.get("plus_minus", 0)
+        three_made = record.get("three_pt_made", 0)
+        three_att = record.get("three_pt_attempted", 0)
+        
+        # Build conversational response
+        response_parts = []
+        
+        # Scoring
+        if fg_pct > 50:
+            shooting_note = "shot efficiently"
+        elif fg_pct > 40:
+            shooting_note = "shot decently"
+        else:
+            shooting_note = "struggled from the field"
+            
+        response_parts.append(f"🏀 {player_name} scored {pts} points on {fg_made}/{fg_att} shooting - {shooting_note}")
+        
+        # Three-point shooting if relevant
+        if three_att > 0:
+            three_pct = (three_made / three_att) * 100
+            response_parts.append(f"🎯 Hit {three_made}/{three_att} from three ({three_pct:.0f}%)")
+        
+        # Other contributions
+        contributions = []
+        if rebounds > 0:
+            contributions.append(f"{rebounds} rebounds")
+        if assists > 0:
+            contributions.append(f"{assists} assists")
+        if turnovers > 0:
+            contributions.append(f"{turnovers} turnovers")
+            
+        if contributions:
+            response_parts.append(f"📊 Also had {', '.join(contributions)}")
+        
+        # Overall impact
+        if plus_minus > 5:
+            impact = f"strong +{plus_minus} impact"
+        elif plus_minus > 0:
+            impact = f"+{plus_minus} positive contribution"
+        elif plus_minus > -5:
+            impact = f"{plus_minus} neutral impact"
+        else:
+            impact = f"{plus_minus} struggled to help the team"
+            
+        response_parts.append(f"⚖️ Overall {impact}")
+        
+        return ". ".join(response_parts) + "."
+    else:
+        # For specific stat requests, return the normal detailed response
+        return " ".join(results)
 
 
 async def get_top_players(
