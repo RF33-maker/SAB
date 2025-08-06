@@ -18,9 +18,6 @@ def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = 
 
     query = supabase.table("player_stats").select("*").ilike("name", player_name)
 
-    if game_id:
-        query = query.eq("game_id", game_id)
-
     # Add league_id filter if provided
     if league_id:
         query = query.eq("league_id", league_id)
