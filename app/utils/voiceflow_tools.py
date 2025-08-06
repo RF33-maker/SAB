@@ -147,15 +147,23 @@ async def get_player_stats(
     if mode == "latest":
         records = [records[0]]
 
-    # ✅ Default to all numeric stats if no stat(s) provided
+    # ✅ Default to key stats if no stat(s) provided
     if not stat_list:
         if stat:
             stat_list = [stat]
         else:
+            # Only use essential basketball stats, exclude metadata
+            essential_stats = [
+                "points", "rebounds_total", "assists", "steals", "blocks", "turnovers",
+                "field_goals_made", "field_goals_attempted", "field_goal_percent",
+                "three_pt_made", "three_pt_attempted", "three_pt_percent",
+                "free_throws_made", "free_throws_attempted", "free_throw_percent",
+                "plus_minus", "minutes_played"
+            ]
             record = records[0]
             stat_list = [
-                key for key, value in record.items()
-                if isinstance(value, (int, float)) and key not in ("game_id", "number")
+                key for key in essential_stats
+                if key in record and isinstance(record.get(key), (int, float))
             ]
             print(f"🧾 Auto-generated stat_list for {player_name}: {stat_list}")
 
@@ -214,51 +222,85 @@ async def get_player_stats(
 
 
     if format_mode == "cleaned":
-
-        def fmt(label, value):
-            return f"- {label}: {value}"
-
         # Pull values from records[0] for latest game
         record = records[0]
-
-        scoring = [
-            fmt("Points", record.get("points")),
-            fmt("FG", f'{record.get("field_goals_made")}/{record.get("field_goals_attempted")} ({record.get("field_goal_percent", 0):.2f}%)'),
-            fmt("FT", f'{record.get("free_throws_made")}/{record.get("free_throws_attempted")} ({record.get("free_throw_percent", 0):.2f}%)')
+        
+        pts = record.get("points", 0)
+        fg_made = record.get("field_goals_made", 0)
+        fg_att = record.get("field_goals_attempted", 0)
+        fg_pct = record.get("field_goal_percent", 0)
+        rebounds = record.get("rebounds_total", 0)
+        assists = record.get("assists", 0)
+        turnovers = record.get("turnovers", 0)
+        plus_minus = record.get("plus_minus", 0)
+        three_made = record.get("three_pt_made", 0)
+        three_att = record.get("three_pt_attempted", 0)
+        steals = record.get("steals", 0)
+        blocks = record.get("blocks", 0)
+        
+        # Build conversational response focusing on key areas
+        response_parts = []
+        
+        # Scoring performance
+        if fg_pct > 50:
+            shooting_note = "shot efficiently"
+        elif fg_pct > 40:
+            shooting_note = "shot decently"
+        else:
+            shooting_note = "struggled with shooting"
+            
+        response_parts.append(f"🏀 **Scoring**: {pts} points on {fg_made}/{fg_att} shooting ({fg_pct:.1f}%) - {shooting_note}")
+        
+        # Three-point shooting if relevant
+        if three_att > 0:
+            three_pct = (three_made / three_att) * 100
+            response_parts.append(f"🎯 **3-Point**: {three_made}/{three_att} ({three_pct:.1f}%)")
+        
+        # Playmaking/Ball handling
+        if assists > 0 or turnovers > 0:
+            ast_to_ratio = assists / turnovers if turnovers > 0 else assists
+            if ast_to_ratio >= 2:
+                playmaking_note = "great ball security"
+            elif ast_to_ratio >= 1:
+                playmaking_note = "solid playmaking"
+            else:
+                playmaking_note = "needs to protect the ball better"
+            response_parts.append(f"🎯 **Playmaking**: {assists} assists, {turnovers} turnovers - {playmaking_note}")
+        
+        # Rebounding and Defense
+        defense_stats = []
+        if rebounds > 0:
+            defense_stats.append(f"{rebounds} rebounds")
+        if steals > 0:
+            defense_stats.append(f"{steals} steals")
+        if blocks > 0:
+            defense_stats.append(f"{blocks} blocks")
+            
+        if defense_stats:
+            response_parts.append(f"🛡️ **Defense**: {', '.join(defense_stats)}")
+        
+        # Overall impact
+        if plus_minus > 5:
+            impact = "strong positive impact"
+        elif plus_minus > 0:
+            impact = "positive contribution"
+        elif plus_minus > -5:
+            impact = "neutral impact"
+        else:
+            impact = "struggled to impact winning"
+            
+        response_parts.append(f"📊 **Impact**: {plus_minus:+d} plus/minus - {impact}")
+        
+        # Follow-up suggestions
+        follow_ups = [
+            "• Want season averages?",
+            "• Compare to other games?", 
+            "• See team performance?",
+            "• Check shooting trends?"
         ]
-
-        rebounding = [
-            fmt("Total", record.get("rebounds_total")),
-            fmt("Offensive", record.get("rebounds_offensive")),
-            fmt("Defensive", record.get("rebounds_defensive"))
-        ]
-
-        playmaking = [
-            fmt("Assists", record.get("assists")),
-            fmt("Turnovers", record.get("turnovers")),
-            fmt("AST/TO", record.get("assist_turnover_ratio"))
-        ]
-
-        defense = [
-            fmt("Steals", record.get("steals")),
-            fmt("Blocks", record.get("blocks"))
-        ]
-
-        extras = [
-            fmt("Plus-Minus", record.get("plus_minus")),
-            fmt("Fouls", record.get("personal_fouls")),
-            fmt("Fouls Drawn", record.get("fouls_drawn")),
-            fmt("True Shooting %", f'{record.get("true_shooting_percent", 0):.2f}%')
-        ]
-
-        output = (
-            f"📊 {player_name} — Last Game Summary\n\n"
-            f"🟠 Scoring:\n" + "\n".join(scoring) + "\n\n" +
-            f"🟡 Rebounding:\n" + "\n".join(rebounding) + "\n\n" +
-            f"🔵 Playmaking:\n" + "\n".join(playmaking) + "\n\n" +
-            f"🛡️ Defense:\n" + "\n".join(defense) + "\n\n" +
-            f"🧱 Extras:\n" + "\n".join(extras)
-        )
+        
+        output = f"📈 **{player_name}** - Latest Game:\n\n" + "\n".join(response_parts)
+        output += f"\n\n💬 **What's next?**\n" + "\n".join(follow_ups)
 
         return output, records
 
