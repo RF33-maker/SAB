@@ -195,11 +195,17 @@ def chat_league():
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
 
-        # Extract parameters
+        # Extract parameters - handle both 'message' and 'question' for compatibility
         thread_id = data.get('thread_id')
-        user_input = data.get('message', '')
+        user_input = data.get('message', '') or data.get('question', '')
         league_id = data.get('league_id')
         player_name = data.get('player_name')
+        
+        # If no thread_id provided, create a new thread
+        if not thread_id:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            logging.warning(f"🆕 Created new thread: {thread_id}")
 
         if not league_id:
             return jsonify({"error": "league_id is required"}), 400
