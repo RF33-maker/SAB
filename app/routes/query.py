@@ -186,6 +186,97 @@ def check_summary():
         logging.error("❌ Error in /check_summary route:", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+@query_bp.route('/api/chat/league', methods=['POST'])
+@limiter.limit("60 per minute")
+def chat_league():
+    """Handle league-specific chat requests"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        # Extract parameters
+        thread_id = data.get('thread_id')
+        user_input = data.get('message', '')
+        league_id = data.get('league_id')
+        player_name = data.get('player_name')
+
+        if not league_id:
+            return jsonify({"error": "league_id is required"}), 400
+
+        logging.warning(f"📦 League chat request: {data}")
+
+        # Submit user message to thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_input
+        )
+
+        # Run assistant
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=assistant_id
+        )
+
+        # Handle tool calls (same logic as /chat route)
+        if run.status == "requires_action" and run.required_action:
+            tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
+            tool_name = tool_call.function.name
+            args = json.loads(tool_call.function.arguments)
+
+            # Add league_id to args if not present
+            if 'league_id' not in args:
+                args['league_id'] = league_id
+
+            if tool_name == "get_player_stats":
+                response = asyncio.run(get_player_stats(**args))
+                if isinstance(response, tuple):
+                    raw_output, records = response
+                    store_player_data(thread_id, args.get("player_name"), records)
+                else:
+                    raw_output = response
+                    
+            elif tool_name == "get_top_players":
+                raw_output = asyncio.run(get_top_players(**args))
+                
+            elif tool_name == "get_game_summary":
+                raw_output = asyncio.run(get_game_summary(**args))
+                
+            elif tool_name == "get_team_analysis":
+                raw_output = asyncio.run(get_team_analysis(**args))
+                
+            elif tool_name == "get_advanced_insights":
+                raw_output = asyncio.run(get_advanced_insights(**args))
+            else:
+                raw_output = "Tool not recognized"
+
+            # Submit tool output
+            client.beta.threads.runs.submit_tool_outputs(
+                thread_id=thread_id,
+                run_id=run.id,
+                tool_outputs=[{
+                    "tool_call_id": tool_call.id,
+                    "output": str(raw_output)
+                }]
+            )
+
+            # Get final response
+            run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            messages = client.beta.threads.messages.list(thread_id=thread_id)
+            
+            return jsonify({
+                "response": raw_output,
+                "thread_id": thread_id,
+                "league_id": league_id
+            })
+
+        return jsonify({"error": "❌ No tool call triggered."}), 400
+
+    except Exception as e:
+        logging.error("❌ Error in /api/chat/league route:", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 @query_bp.route('/api/generate-summary', methods=['POST'])
 def generate_summary():
     data = request.get_json()
