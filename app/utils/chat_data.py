@@ -12,7 +12,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def fetch_player_records(player_name: Optional[str], game_id: Optional[str] = None):
+def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = None):
     if not player_name:
         return []
 
@@ -20,6 +20,10 @@ def fetch_player_records(player_name: Optional[str], game_id: Optional[str] = No
 
     if game_id:
         query = query.eq("game_id", game_id)
+
+    # Add league_id filter if provided
+    if league_id:
+        query = query.eq("league_id", league_id)
 
     response = query.order("game_date", desc=True).limit(5).execute()
 

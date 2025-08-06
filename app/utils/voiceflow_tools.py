@@ -110,7 +110,8 @@ async def get_player_stats(
     stat_list: Optional[List[str]] = None,
     mode: Optional[str] = None,
     user_message: Optional[str] = None,
-    format_mode: Optional[str] = None  # ✅ Add this line
+    format_mode: Optional[str] = None,
+    league_id: Optional[str] = None  # ✅ Add league_id parameter
 ):
 
     global last_player_name
@@ -137,8 +138,8 @@ async def get_player_stats(
 
 
     # ⛏ Fetch from Supabase
-    records = fetch_player_records(player_name)
-    print(f"📦 Records retrieved for {player_name}:", records)
+    records = fetch_player_records(player_name, league_id=league_id)
+    print(f"📦 Records retrieved for {player_name} (league: {league_id}):", records)
 
     if not records:
         return f"❌ No records found for {player_name}."
