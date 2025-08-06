@@ -116,8 +116,13 @@ async def get_player_stats(
 
     global last_player_name
 
-    if not player_name:
+    # Handle empty string as signal to use last mentioned player
+    if player_name == "":
         player_name = last_player_name
+    elif not player_name:
+        player_name = last_player_name
+    
+    # Update last player name if we have a valid one
     if player_name:
         last_player_name = player_name
 
@@ -175,8 +180,17 @@ async def get_player_stats(
         print(f"🧪 Processing stat: {raw_stat} → {stat_key}")
 
         try:
+            # Handle team info request
+            if stat_key == "team" or raw_stat.lower() in ["team", "who does he play for", "what team"]:
+                if records:
+                    team_name = records[0].get("team", "Unknown Team")
+                    results.append(f"🏀 {player_name} plays for {team_name}.")
+                else:
+                    results.append(f"❌ No team information found for {player_name}.")
+                continue
+            
             # Handle percentage stats
-            if stat_key in PERCENTAGE_STATS:
+            elif stat_key in PERCENTAGE_STATS:
                 makes_key, atts_key = PERCENTAGE_STATS[stat_key]
                 makes = [r.get(makes_key, 0) for r in records]
                 atts = [r.get(atts_key, 0) for r in records]

@@ -46,7 +46,7 @@ def create_assistant(client):
                                 "stat_list": {
                                     "type": "array",
                                     "items": { "type": "string" },
-                                    "description": "A list of stats to retrieve (e.g. ['points','assists','rebounds_total'])."
+                                    "description": "A list of stats to retrieve (e.g. ['points','assists','rebounds_total','team'])."
                                 },
                                 "mode": {
                                     "type": "string",
@@ -211,6 +211,12 @@ def create_assistant(client):
                 - Never guess or generate stat answers yourself
                 - Always use the appropriate tool for each type of question
                 - Choose the most specific tool for the user's query
+                - Remember player names mentioned in the conversation for follow-up questions
+
+                🧠 CONVERSATIONAL CONTEXT:
+                - When a user asks follow-up questions like "who does he play for?", "what team?", "his rebounds?", etc., use the most recently mentioned player name
+                - If no player name is provided and the question refers to "he/his/him", pass an empty string for player_name - the tool will use the last mentioned player
+                - Keep track of conversation flow to provide contextual responses
 
                 🏀 TOOL SELECTION GUIDE:
 
@@ -218,6 +224,8 @@ def create_assistant(client):
                 - "How many points did Rhys Farrell score?"
                 - "What was Corey Samuels' shooting percentage?"
                 - "How did James Claar perform last game?"
+                - "Who does he play for?" → Use player_name = "" to reference last mentioned player
+                - "His rebounds?" → Use player_name = "" to reference last mentioned player
 
                 **get_top_players** - Rankings and leaderboards  
                 - "Who leads in rebounds?"
@@ -245,6 +253,14 @@ def create_assistant(client):
                 - "average"/"per game" → mode = "average"
                 - "total"/"season"/"overall" → mode = "total"  
                 - "latest"/"last game"/no context → mode = "latest"
+
+                🔄 Follow-up Examples:
+                User: "How did Maximillian Matthews perform?"
+                Assistant: [calls get_player_stats with player_name="Maximillian Matthews"]
+                User: "Who does he play for?"
+                Assistant: [calls get_player_stats with player_name="" and stat_list=["team"] to get team info]
+                User: "His shooting percentage?"
+                Assistant: [calls get_player_stats with player_name="" and stat="field_goal_percent"]
 
                 Always use tools - never provide basketball analysis from your own knowledge.
                 """,
