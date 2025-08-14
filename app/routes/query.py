@@ -13,7 +13,7 @@ from app.utils.chat_data import supabase
 from flask_cors import CORS
 from threading import Thread
 from app.utils.chat_functions import create_assistant, store_player_data
-from app.utils.voiceflow_tools import get_player_stats, get_top_players, get_game_summary, get_team_analysis, get_advanced_insights
+from app.utils.voiceflow_tools import get_player_stats, get_top_players, get_game_summary, get_team_analysis, get_advanced_insights, get_player_trending
 from openai.types.chat import ChatCompletionMessageParam
 
 # Blueprint setup
@@ -104,6 +104,9 @@ def chat():
                 
             elif tool_name == "get_team_analysis":
                 raw_output = asyncio.run(get_team_analysis(**args))
+                
+            elif tool_name == "get_player_trending":
+                raw_output = asyncio.run(get_player_trending(**args))
                 
             elif tool_name == "get_advanced_insights":
                 raw_output = asyncio.run(get_advanced_insights(**args))
@@ -251,6 +254,9 @@ def chat_league():
                 
             elif tool_name == "get_team_analysis":
                 raw_output = asyncio.run(get_team_analysis(**args))
+                
+            elif tool_name == "get_player_trending":
+                raw_output = asyncio.run(get_player_trending(**args))
                 
             elif tool_name == "get_advanced_insights":
                 raw_output = asyncio.run(get_advanced_insights(**args))

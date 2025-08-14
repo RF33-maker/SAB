@@ -97,6 +97,86 @@ PERCENTAGE_STATS = {
 
 last_player_name = None
 
+def analyze_trending(player_name: str, records: List[dict]) -> str:
+    """
+    Analyze player trending based on recent games.
+    Compare latest 2 games vs previous 2-3 games for key stats.
+    """
+    if len(records) < 3:
+        return ""
+    
+    # Key stats to analyze for trending
+    key_stats = ["points", "field_goal_percent", "three_pt_percent", "rebounds_total", "assists", "plus_minus"]
+    
+    # Split games: recent (latest 2) vs older (next 2-3)
+    recent_games = records[:2]
+    older_games = records[2:min(5, len(records))]
+    
+    trends = []
+    significant_changes = []
+    
+    for stat in key_stats:
+        # Calculate averages for both periods
+        recent_values = [float(g.get(stat, 0)) for g in recent_games if g.get(stat) is not None]
+        older_values = [float(g.get(stat, 0)) for g in older_games if g.get(stat) is not None]
+        
+        if not recent_values or not older_values:
+            continue
+            
+        recent_avg = sum(recent_values) / len(recent_values)
+        older_avg = sum(older_values) / len(older_values)
+        
+        # Calculate percentage change
+        if older_avg != 0:
+            change_pct = ((recent_avg - older_avg) / abs(older_avg)) * 100
+        else:
+            change_pct = 0
+        
+        # Determine if change is significant (>15% change or >3 point difference for counting stats)
+        is_significant = False
+        if stat in ["points", "rebounds_total", "assists"]:
+            is_significant = abs(recent_avg - older_avg) >= 2.0
+        elif stat in ["field_goal_percent", "three_pt_percent"]:
+            is_significant = abs(change_pct) >= 10
+        elif stat == "plus_minus":
+            is_significant = abs(recent_avg - older_avg) >= 5.0
+        
+        if is_significant:
+            direction = "up" if change_pct > 0 else "down"
+            stat_display = stat.replace("_", " ").replace("percent", "%").title()
+            
+            if stat in ["points", "rebounds_total", "assists"]:
+                significant_changes.append(f"{stat_display}: {direction} from {older_avg:.1f} to {recent_avg:.1f}")
+            elif stat in ["field_goal_percent", "three_pt_percent"]:
+                significant_changes.append(f"{stat_display}: {direction} from {older_avg:.1f}% to {recent_avg:.1f}%")
+            elif stat == "plus_minus":
+                significant_changes.append(f"Impact: {direction} from {older_avg:+.1f} to {recent_avg:+.1f}")
+    
+    if not significant_changes:
+        return f"{player_name} has been relatively consistent across recent games"
+    
+    # Categorize overall trend
+    positive_changes = sum(1 for change in significant_changes if "up from" in change)
+    negative_changes = sum(1 for change in significant_changes if "down from" in change)
+    
+    if positive_changes > negative_changes:
+        trend_direction = "trending upward"
+        trend_emoji = "📈"
+    elif negative_changes > positive_changes:
+        trend_direction = "trending downward" 
+        trend_emoji = "📉"
+    else:
+        trend_direction = "showing mixed trends"
+        trend_emoji = "🔄"
+    
+    # Build response
+    if len(significant_changes) <= 2:
+        changes_text = " and ".join(significant_changes)
+    else:
+        changes_text = ", ".join(significant_changes[:-1]) + f", and {significant_changes[-1]}"
+    
+    return f"{trend_emoji} {player_name} is {trend_direction}: {changes_text}"
+
 def normalize_stat(raw: str) -> str:
     if not raw:
         return ""
@@ -111,7 +191,8 @@ async def get_player_stats(
     mode: Optional[str] = None,
     user_message: Optional[str] = None,
     format_mode: Optional[str] = None,
-    league_id: Optional[str] = None  # ✅ Add league_id parameter
+    league_id: Optional[str] = None,
+    trending_analysis: Optional[bool] = True  # Add trending analysis by default
 ):
 
     global last_player_name
@@ -337,6 +418,12 @@ async def get_player_stats(
         return output, records
 
     
+    # Add trending analysis if we have enough games and it's requested
+    if trending_analysis and len(records) >= 3:
+        trending_insights = analyze_trending(player_name, records)
+        if trending_insights:
+            results.append(f"\n📈 **Trending Analysis**: {trending_insights}")
+
     # Create a conversational summary instead of listing each stat
     if len(results) > 5:  # If we have many auto-generated stats, make it conversational
         record = records[0]
@@ -392,6 +479,12 @@ async def get_player_stats(
             impact = f"{plus_minus} struggled to help the team"
             
         response_parts.append(f"⚖️ Overall {impact}")
+        
+        # Add trending analysis
+        if trending_analysis and len(records) >= 3:
+            trending_insights = analyze_trending(player_name, records)
+            if trending_insights:
+                response_parts.append(f"📈 {trending_insights}")
         
         return ". ".join(response_parts) + "."
     else:
@@ -778,6 +871,65 @@ async def get_team_analysis(
         print(f"❌ Error in get_team_analysis: {str(e)}")
         return f"⚠️ Error analyzing team: {str(e)}"
 
+
+async def get_player_trending(
+    player_name: str,
+    league_id: Optional[str] = None,
+    games_to_analyze: Optional[int] = 5
+):
+    """
+    Get detailed trending analysis for a specific player.
+    
+    Args:
+        player_name: Name of the player
+        league_id: Optional league filter
+        games_to_analyze: Number of recent games to analyze (default 5)
+    """
+    
+    try:
+        # Get player records
+        records = fetch_player_records(player_name, league_id=league_id)
+        
+        if not records:
+            return f"❌ No records found for {player_name}."
+        
+        if len(records) < 3:
+            return f"⚠️ Need at least 3 games for trending analysis. {player_name} has {len(records)} game(s)."
+        
+        # Limit to requested number of games
+        records = records[:games_to_analyze]
+        
+        # Get comprehensive trending analysis
+        trending_result = analyze_trending(player_name, records)
+        
+        if not trending_result:
+            return f"📊 {player_name} shows consistent performance across {len(records)} recent games."
+        
+        # Add game-by-game breakdown
+        game_breakdown = []
+        for i, game in enumerate(records[:3], 1):
+            pts = game.get("points", 0)
+            fg_pct = game.get("field_goal_percent", 0)
+            reb = game.get("rebounds_total", 0)
+            ast = game.get("assists", 0)
+            date = game.get("game_date", "Unknown")
+            
+            game_breakdown.append(f"Game {i} ({date}): {pts}pts, {reb}reb, {ast}ast ({fg_pct:.1f}% FG)")
+        
+        detailed_response = [
+            f"📈 **Trending Analysis for {player_name}**",
+            "",
+            trending_result,
+            "",
+            f"📋 **Recent Game Breakdown**:",
+            *game_breakdown
+        ]
+        
+        return "\n".join(detailed_response)
+        
+    except Exception as e:
+        print(f"❌ Error in get_player_trending: {str(e)}")
+        return f"⚠️ Error analyzing trends for {player_name}: {str(e)}"
 
 async def get_advanced_insights(
     insight_type: str,

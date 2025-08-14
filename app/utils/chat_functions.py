@@ -56,6 +56,10 @@ def create_assistant(client):
                                 "user_message": {
                                     "type": "string",
                                     "description": "The raw user query, used for inferring mode when not explicitly provided."
+                                },
+                                "trending_analysis": {
+                                    "type": "boolean",
+                                    "description": "Whether to include trending analysis comparing recent vs older games (default: true)."
                                 }
                             },
                             "required": ["player_name"]
@@ -169,6 +173,31 @@ def create_assistant(client):
                 {
                     "type": "function",
                     "function": {
+                        "name": "get_player_trending",
+                        "description": "Get detailed trending analysis for a player, comparing recent performance vs older games to identify if player is improving or declining",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "player_name": {
+                                    "type": "string",
+                                    "description": "Name of the player to analyze"
+                                },
+                                "league_id": {
+                                    "type": "string", 
+                                    "description": "Optional league ID to filter results"
+                                },
+                                "games_to_analyze": {
+                                    "type": "integer",
+                                    "description": "Number of recent games to analyze (default 5)"
+                                }
+                            },
+                            "required": ["player_name"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "get_advanced_insights", 
                         "description": "Generate advanced insights like top performers, starting 5 recommendations, or game impact analysis",
                         "parameters": {
@@ -237,6 +266,12 @@ def create_assistant(client):
                 - "Which team won the rebound battle?" → query_type = "team_comparison"
                 - "How did the teams compare?" → query_type = "team_comparison"
                 - "Game summary" → query_type = "detailed"
+
+                **get_player_trending** - Player performance trends
+                - "How has James been trending lately?"
+                - "Is Rhys improving over his recent games?"
+                - "Show me trending analysis for Corey Samuels"
+                - "Has his shooting been getting better?"
 
                 **get_team_analysis** - Team-specific analysis
                 - "How did Hurricanes' roster perform?" → analysis_type = "roster"
