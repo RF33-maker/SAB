@@ -41,4 +41,4 @@ def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = 
             return response.data
     
     print(f"❌ No records found for '{player_name}' in any search pattern")
-    return []e.data
+    return []
