@@ -1,4 +1,4 @@
-    # app/utils/voiceflow_tools.py
+# app/utils/voiceflow_tools.py
 
 import os
 import requests
@@ -36,7 +36,7 @@ STAT_ALIASES = {
         "ast-to ratio":   "assist_turnover_ratio",
         "ast:to ratio":   "assist_turnover_ratio",
         "ast-to-ratio":   "assist_turnover_ratio",
-    
+
         # Percentages
         "fg%":            "field_goal_percent",
         "field goal %":   "field_goal_percent",
@@ -104,34 +104,34 @@ def analyze_trending(player_name: str, records: List[dict]) -> str:
     """
     if len(records) < 3:
         return ""
-    
+
     # Key stats to analyze for trending
     key_stats = ["points", "field_goal_percent", "three_pt_percent", "rebounds_total", "assists", "plus_minus"]
-    
+
     # Split games: recent (latest 2) vs older (next 2-3)
     recent_games = records[:2]
     older_games = records[2:min(5, len(records))]
-    
+
     trends = []
     significant_changes = []
-    
+
     for stat in key_stats:
         # Calculate averages for both periods
         recent_values = [float(g.get(stat, 0)) for g in recent_games if g.get(stat) is not None]
         older_values = [float(g.get(stat, 0)) for g in older_games if g.get(stat) is not None]
-        
+
         if not recent_values or not older_values:
             continue
-            
+
         recent_avg = sum(recent_values) / len(recent_values)
         older_avg = sum(older_values) / len(older_values)
-        
+
         # Calculate percentage change
         if older_avg != 0:
             change_pct = ((recent_avg - older_avg) / abs(older_avg)) * 100
         else:
             change_pct = 0
-        
+
         # Determine if change is significant (>15% change or >3 point difference for counting stats)
         is_significant = False
         if stat in ["points", "rebounds_total", "assists"]:
@@ -140,25 +140,25 @@ def analyze_trending(player_name: str, records: List[dict]) -> str:
             is_significant = abs(change_pct) >= 10
         elif stat == "plus_minus":
             is_significant = abs(recent_avg - older_avg) >= 5.0
-        
+
         if is_significant:
             direction = "up" if change_pct > 0 else "down"
             stat_display = stat.replace("_", " ").replace("percent", "%").title()
-            
+
             if stat in ["points", "rebounds_total", "assists"]:
                 significant_changes.append(f"{stat_display}: {direction} from {older_avg:.1f} to {recent_avg:.1f}")
             elif stat in ["field_goal_percent", "three_pt_percent"]:
                 significant_changes.append(f"{stat_display}: {direction} from {older_avg:.1f}% to {recent_avg:.1f}%")
             elif stat == "plus_minus":
                 significant_changes.append(f"Impact: {direction} from {older_avg:+.1f} to {recent_avg:+.1f}")
-    
+
     if not significant_changes:
         return f"{player_name} has been relatively consistent across recent games"
-    
+
     # Categorize overall trend
     positive_changes = sum(1 for change in significant_changes if "up from" in change)
     negative_changes = sum(1 for change in significant_changes if "down from" in change)
-    
+
     if positive_changes > negative_changes:
         trend_direction = "trending upward"
         trend_emoji = "📈"
@@ -168,13 +168,13 @@ def analyze_trending(player_name: str, records: List[dict]) -> str:
     else:
         trend_direction = "showing mixed trends"
         trend_emoji = "🔄"
-    
+
     # Build response
     if len(significant_changes) <= 2:
         changes_text = " and ".join(significant_changes)
     else:
         changes_text = ", ".join(significant_changes[:-1]) + f", and {significant_changes[-1]}"
-    
+
     return f"{trend_emoji} {player_name} is {trend_direction}: {changes_text}"
 
 def normalize_stat(raw: str) -> str:
@@ -202,7 +202,7 @@ async def get_player_stats(
         player_name = last_player_name
     elif not player_name:
         player_name = last_player_name
-    
+
     # Update last player name if we have a valid one
     if player_name:
         last_player_name = player_name
@@ -237,7 +237,7 @@ async def get_player_stats(
             if league_id:
                 fallback_query = fallback_query.eq("league_id", league_id)
             fallback_response = fallback_query.execute()
-            
+
             if fallback_response.data:
                 player_info = fallback_response.data[0]
                 return f"📋 Found {player_name} in the system:\n" + \
@@ -247,7 +247,7 @@ async def get_player_stats(
                        f"Note: No game stats available yet."
         except Exception as e:
             print(f"⚠️ Fallback query failed: {e}")
-        
+
         return f"❌ No records found for {player_name}."
 
     # Only filter to latest record if specifically requested
@@ -290,7 +290,7 @@ async def get_player_stats(
                 else:
                     results.append(f"❌ No team information found for {player_name}.")
                 continue
-            
+
             # Handle percentage stats
             elif stat_key in PERCENTAGE_STATS:
                 makes_key, atts_key = PERCENTAGE_STATS[stat_key]
@@ -356,7 +356,7 @@ async def get_player_stats(
     if format_mode == "cleaned":
         # Pull values from records[0] for latest game
         record = records[0]
-        
+
         pts = record.get("points", 0)
         fg_made = record.get("field_goals_made", 0)
         fg_att = record.get("field_goals_attempted", 0)
@@ -369,25 +369,28 @@ async def get_player_stats(
         three_att = record.get("three_pt_attempted", 0)
         steals = record.get("steals", 0)
         blocks = record.get("blocks", 0)
-        
+
         # Build conversational response focusing on key areas
         response_parts = []
-        
-        # Scoring performance
-        if fg_pct > 50:
+
+        # Scoring
+        # Calculate actual shooting percentage from makes/attempts
+        actual_fg_pct = (fg_made / fg_att * 100) if fg_att > 0 else 0
+
+        if actual_fg_pct > 50:
             shooting_note = "shot efficiently"
-        elif fg_pct > 40:
+        elif actual_fg_pct > 40:
             shooting_note = "shot decently"
         else:
-            shooting_note = "struggled with shooting"
-            
-        response_parts.append(f"🏀 **Scoring**: {pts} points on {fg_made}/{fg_att} shooting ({fg_pct:.1f}%) - {shooting_note}")
-        
+            shooting_note = "struggled from the field"
+
+        response_parts.append(f"🏀 {player_name} scored {pts} points on {fg_made}/{fg_att} shooting ({actual_fg_pct:.1f}%) - {shooting_note}")
+
         # Three-point shooting if relevant
         if three_att > 0:
             three_pct = (three_made / three_att) * 100
-            response_parts.append(f"🎯 **3-Point**: {three_made}/{three_att} ({three_pct:.1f}%)")
-        
+            response_parts.append(f"🎯 Hit {three_made}/{three_att} from three ({three_pct:.1f}%)")
+
         # Playmaking/Ball handling
         if assists > 0 or turnovers > 0:
             ast_to_ratio = assists / turnovers if turnovers > 0 else assists
@@ -397,8 +400,8 @@ async def get_player_stats(
                 playmaking_note = "solid playmaking"
             else:
                 playmaking_note = "needs to protect the ball better"
-            response_parts.append(f"🎯 **Playmaking**: {assists} assists, {turnovers} turnovers - {playmaking_note}")
-        
+            response_parts.append(f"🎯 Playmaking: {assists} assists, {turnovers} turnovers - {playmaking_note}")
+
         # Rebounding and Defense
         defense_stats = []
         if rebounds > 0:
@@ -407,10 +410,10 @@ async def get_player_stats(
             defense_stats.append(f"{steals} steals")
         if blocks > 0:
             defense_stats.append(f"{blocks} blocks")
-            
+
         if defense_stats:
-            response_parts.append(f"🛡️ **Defense**: {', '.join(defense_stats)}")
-        
+            response_parts.append(f"🛡️ Defense: {', '.join(defense_stats)}")
+
         # Overall impact
         if plus_minus > 5:
             impact = "strong positive impact"
@@ -420,9 +423,9 @@ async def get_player_stats(
             impact = "neutral impact"
         else:
             impact = "struggled to impact winning"
-            
-        response_parts.append(f"📊 **Impact**: {plus_minus:+d} plus/minus - {impact}")
-        
+
+        response_parts.append(f"📊 Impact: {plus_minus:+d} plus/minus - {impact}")
+
         # Follow-up suggestions
         follow_ups = [
             "• Want season averages?",
@@ -430,13 +433,13 @@ async def get_player_stats(
             "• See team performance?",
             "• Check shooting trends?"
         ]
-        
+
         output = f"📈 **{player_name}** - Latest Game:\n\n" + "\n".join(response_parts)
         output += f"\n\n💬 **What's next?**\n" + "\n".join(follow_ups)
 
         return output, records
 
-    
+
     # Add trending analysis if we have enough games and it's requested
     if trending_analysis and len(records) >= 3:
         trending_insights = analyze_trending(player_name, records)
@@ -456,25 +459,28 @@ async def get_player_stats(
         plus_minus = record.get("plus_minus", 0)
         three_made = record.get("three_pt_made", 0)
         three_att = record.get("three_pt_attempted", 0)
-        
+
         # Build conversational response
         response_parts = []
-        
+
         # Scoring
-        if fg_pct > 50:
+        # Calculate actual shooting percentage from makes/attempts
+        actual_fg_pct = (fg_made / fg_att * 100) if fg_att > 0 else 0
+
+        if actual_fg_pct > 50:
             shooting_note = "shot efficiently"
-        elif fg_pct > 40:
+        elif actual_fg_pct > 40:
             shooting_note = "shot decently"
         else:
             shooting_note = "struggled from the field"
-            
-        response_parts.append(f"🏀 {player_name} scored {pts} points on {fg_made}/{fg_att} shooting - {shooting_note}")
-        
+
+        response_parts.append(f"🏀 {player_name} scored {pts} points on {fg_made}/{fg_att} shooting ({actual_fg_pct:.1f}%) - {shooting_note}")
+
         # Three-point shooting if relevant
         if three_att > 0:
             three_pct = (three_made / three_att) * 100
-            response_parts.append(f"🎯 Hit {three_made}/{three_att} from three ({three_pct:.0f}%)")
-        
+            response_parts.append(f"🎯 Hit {three_made}/{three_att} from three ({three_pct:.1f}%)")
+
         # Other contributions
         contributions = []
         if rebounds > 0:
@@ -483,10 +489,10 @@ async def get_player_stats(
             contributions.append(f"{assists} assists")
         if turnovers > 0:
             contributions.append(f"{turnovers} turnovers")
-            
+
         if contributions:
             response_parts.append(f"📊 Also had {', '.join(contributions)}")
-        
+
         # Overall impact
         if plus_minus > 5:
             impact = f"strong +{plus_minus} impact"
@@ -496,15 +502,15 @@ async def get_player_stats(
             impact = f"{plus_minus} neutral impact"
         else:
             impact = f"{plus_minus} struggled to help the team"
-            
+
         response_parts.append(f"⚖️ Overall {impact}")
-        
+
         # Add trending analysis
         if trending_analysis and len(records) >= 3:
             trending_insights = analyze_trending(player_name, records)
             if trending_insights:
                 response_parts.append(f"📈 {trending_insights}")
-        
+
         return ". ".join(response_parts) + "."
     else:
         # For specific stat requests, return the normal detailed response
@@ -519,17 +525,17 @@ async def get_top_players(
 ):
     """
     Get top players in a specific stat category.
-    
+
     Args:
         stat: The stat to rank by (e.g., "points", "rebounds", "assists")
         limit: Number of top players to return (default 5)
         mode: "latest" (last game), "average" (per game), or "total" (season)
         user_message: Original user query for context
     """
-    
+
     # Normalize the stat name
     stat_key = normalize_stat(stat)
-    
+
     # Infer mode from user message if not provided
     if not mode and user_message:
         msg = user_message.lower()
@@ -539,31 +545,31 @@ async def get_top_players(
             mode = "total"
         else:
             mode = "latest"
-    
+
     try:
         # Get all player records from Supabase
         from app.utils.chat_data import supabase
         response = supabase.table("player_stats").select("*").order("game_date", desc=True).execute()
-        
+
         if not response.data:
             return "❌ No player data found in database."
-        
+
         all_records = response.data
-        
+
         # Group records by player
         player_stats = {}
         for record in all_records:
             player_name = record.get("name")
             if not player_name:
                 continue
-                
+
             if player_name not in player_stats:
                 player_stats[player_name] = []
             player_stats[player_name].append(record)
-        
+
         # Calculate stat values for each player based on mode
         player_rankings = []
-        
+
         for player_name, records in player_stats.items():
             if mode == "latest":
                 # Use most recent game
@@ -576,7 +582,7 @@ async def get_top_players(
                         "team": latest_record.get("team", ""),
                         "game_date": latest_record.get("game_date", "")
                     })
-                    
+
             elif mode == "average":
                 # Calculate per-game average
                 values = [float(r.get(stat_key, 0)) for r in records if r.get(stat_key) is not None]
@@ -588,7 +594,7 @@ async def get_top_players(
                         "team": records[0].get("team", ""),
                         "games": len(values)
                     })
-                    
+
             elif mode == "total":
                 # Calculate season total
                 values = [float(r.get(stat_key, 0)) for r in records if r.get(stat_key) is not None]
@@ -600,30 +606,30 @@ async def get_top_players(
                         "team": records[0].get("team", ""),
                         "games": len(values)
                     })
-        
+
         # Sort by stat value (descending)
         player_rankings.sort(key=lambda x: x["value"], reverse=True)
-        
+
         # Limit results
         top_players = player_rankings[:limit]
-        
+
         if not top_players:
             return f"❌ No valid data found for stat '{stat_key.replace('_', ' ')}'."
-        
+
         # Format response
         stat_display = stat_key.replace("_", " ").title()
         mode_display = {"latest": "Latest Game", "average": "Per Game Average", "total": "Season Total"}[mode]
-        
+
         results = [f"🏆 Top {len(top_players)} Players - {stat_display} ({mode_display}):\n"]
-        
+
         for i, player in enumerate(top_players, 1):
             if mode == "latest":
                 results.append(f"{i}. {player['name']} ({player['team']}) - {player['value']} ({player['game_date']})")
             else:
                 results.append(f"{i}. {player['name']} ({player['team']}) - {player['value']} ({player['games']} games)")
-        
+
         return "\n".join(results)
-        
+
     except Exception as e:
         print(f"❌ Error in get_top_players: {str(e)}")
         return f"⚠️ Error retrieving top players for {stat_key.replace('_', ' ')}: {str(e)}"
@@ -637,75 +643,75 @@ async def get_game_summary(
 ):
     """
     Get game summary information including scores, team stats, and key performances.
-    
+
     Args:
         game_date: Date of the game (YYYY-MM-DD format)
         home_team: Home team name
         away_team: Away team name  
         query_type: "basic", "detailed", "quarters", or "team_comparison"
     """
-    
+
     try:
         from app.utils.chat_data import supabase
-        
+
         # Build query to get game data
         query = supabase.table("player_stats").select("*")
-        
+
         if game_date:
             query = query.eq("game_date", game_date)
         if home_team:
             query = query.eq("home_team", home_team)
         if away_team:
             query = query.eq("away_team", away_team)
-            
+
         response = query.execute()
-        
+
         if not response.data:
             return "❌ No game data found for the specified criteria."
-        
+
         game_records = response.data
-        
+
         # Get basic game info
         first_record = game_records[0]
         home_team_name = first_record.get("home_team", "Home")
         away_team_name = first_record.get("away_team", "Away")
         game_date_str = first_record.get("game_date", "Unknown Date")
-        
+
         # Separate players by team
         home_players = [r for r in game_records if r.get("team") == home_team_name]
         away_players = [r for r in game_records if r.get("team") == away_team_name]
-        
+
         if query_type == "basic":
             # Basic game summary
             home_points = sum(r.get("points", 0) for r in home_players)
             away_points = sum(r.get("points", 0) for r in away_players)
-            
+
             # Top scorers
             home_top_scorer = max(home_players, key=lambda x: x.get("points", 0)) if home_players else None
             away_top_scorer = max(away_players, key=lambda x: x.get("points", 0)) if away_players else None
-            
+
             result = [
                 f"🏀 Game Summary - {game_date_str}",
                 f"📊 Final Score: {home_team_name} {home_points} - {away_points} {away_team_name}",
                 ""
             ]
-            
+
             if home_top_scorer:
                 result.append(f"🔥 {home_team_name} Top Scorer: {home_top_scorer['name']} ({home_top_scorer.get('points', 0)} pts)")
             if away_top_scorer:
                 result.append(f"🔥 {away_team_name} Top Scorer: {away_top_scorer['name']} ({away_top_scorer.get('points', 0)} pts)")
-                
+
             return "\n".join(result)
-            
+
         elif query_type == "team_comparison":
             # Team vs team comparison
             def team_total(players, stat):
                 return sum(r.get(stat, 0) for r in players)
-            
+
             def team_avg(players, stat):
                 values = [r.get(stat, 0) for r in players if r.get(stat) is not None]
                 return round(sum(values) / len(values), 1) if values else 0
-            
+
             result = [
                 f"⚔️ Team Comparison - {home_team_name} vs {away_team_name}",
                 f"📅 Date: {game_date_str}",
@@ -721,20 +727,20 @@ async def get_game_summary(
                 f"🎯 3-Point %: {team_avg(home_players, 'three_pt_percent'):.1f}% - {team_avg(away_players, 'three_pt_percent'):.1f}%",
                 f"🆓 Free Throw %: {team_avg(home_players, 'free_throw_percent'):.1f}% - {team_avg(away_players, 'free_throw_percent'):.1f}%"
             ]
-            
+
             return "\n".join(result)
-            
+
         elif query_type == "detailed":
             # Detailed game breakdown
             home_points = sum(r.get("points", 0) for r in home_players)
             away_points = sum(r.get("points", 0) for r in away_players)
-            
+
             # Get top performers in various categories
             all_players = home_players + away_players
             top_scorer = max(all_players, key=lambda x: x.get("points", 0))
             top_rebounder = max(all_players, key=lambda x: x.get("rebounds_total", 0))
             top_assist = max(all_players, key=lambda x: x.get("assists", 0))
-            
+
             result = [
                 f"📊 Detailed Game Report - {game_date_str}",
                 f"🏀 Final Score: {home_team_name} {home_points} - {away_points} {away_team_name}",
@@ -745,11 +751,11 @@ async def get_game_summary(
                 "",
                 f"👥 Players Played: {len(home_players)} ({home_team_name}), {len(away_players)} ({away_team_name})"
             ]
-            
+
             return "\n".join(result)
-            
+
         return "⚠️ Invalid query type specified."
-        
+
     except Exception as e:
         print(f"❌ Error in get_game_summary: {str(e)}")
         return f"⚠️ Error retrieving game summary: {str(e)}"
@@ -762,52 +768,52 @@ async def get_team_analysis(
 ):
     """
     Analyze team performance, roster, or specific aspects like bench production.
-    
+
     Args:
         team_name: Name of the team to analyze
         analysis_type: "roster", "bench", "starters", "efficiency", "shooting_splits"
         game_date: Optional specific game date
     """
-    
+
     try:
         from app.utils.chat_data import supabase
-        
+
         # Get team data
         query = supabase.table("player_stats").select("*").eq("team", team_name)
-        
+
         if game_date:
             query = query.eq("game_date", game_date)
         else:
             # Get most recent game
             query = query.order("game_date", desc=True).limit(15)  # Assume max 15 players
-            
+
         response = query.execute()
-        
+
         if not response.data:
             return f"❌ No data found for team '{team_name}'."
-        
+
         team_players = response.data
         game_date_display = team_players[0].get("game_date", "Unknown Date")
-        
+
         if analysis_type == "roster":
             # Full roster performance
             team_players.sort(key=lambda x: x.get("points", 0), reverse=True)
-            
+
             result = [
                 f"📋 {team_name} Roster Performance - {game_date_display}",
                 ""
             ]
-            
+
             for i, player in enumerate(team_players, 1):
                 mins = player.get("minutes", 0)
                 pts = player.get("points", 0)
                 reb = player.get("rebounds_total", 0)
                 ast = player.get("assists", 0)
-                
+
                 result.append(f"{i:2d}. {player['name']:20s} - {pts:2d} pts, {reb:2d} reb, {ast:2d} ast ({mins} min)")
-            
+
             return "\n".join(result)
-            
+
         elif analysis_type == "efficiency":
             # Calculate efficiency ratings and rank players
             def calculate_efficiency(player):
@@ -821,45 +827,45 @@ async def get_team_analysis(
                 fga = player.get("field_goals_attempted", 0)
                 ftm = player.get("free_throws_made", 0)
                 fta = player.get("free_throws_attempted", 0)
-                
+
                 # Simple efficiency formula
                 efficiency = pts + reb + ast + stl + blk - to - (fga - fgm) - (fta - ftm)
                 return efficiency
-            
+
             # Add efficiency to each player and sort
             for player in team_players:
                 player['efficiency'] = calculate_efficiency(player)
-            
+
             team_players.sort(key=lambda x: x.get('efficiency', 0), reverse=True)
-            
+
             result = [
                 f"⚡ {team_name} Efficiency Rankings - {game_date_display}",
                 ""
             ]
-            
+
             for i, player in enumerate(team_players, 1):
                 eff = player.get('efficiency', 0)
                 mins = player.get("minutes", 0)
                 result.append(f"{i:2d}. {player['name']:20s} - {eff:+3.0f} efficiency ({mins} min)")
-            
+
             return "\n".join(result)
-            
+
         elif analysis_type == "shooting_splits":
             # Team shooting analysis
             def safe_percentage(made, attempted):
                 return (made / attempted * 100) if attempted > 0 else 0
-            
+
             total_fg_made = sum(p.get("field_goals_made", 0) for p in team_players)
             total_fg_att = sum(p.get("field_goals_attempted", 0) for p in team_players)
             total_3p_made = sum(p.get("three_pt_made", 0) for p in team_players)
             total_3p_att = sum(p.get("three_pt_attempted", 0) for p in team_players)
             total_ft_made = sum(p.get("free_throws_made", 0) for p in team_players)
             total_ft_att = sum(p.get("free_throws_attempted", 0) for p in team_players)
-            
+
             fg_pct = safe_percentage(total_fg_made, total_fg_att)
             three_pct = safe_percentage(total_3p_made, total_3p_att)
             ft_pct = safe_percentage(total_ft_made, total_ft_att)
-            
+
             result = [
                 f"🎯 {team_name} Shooting Splits - {game_date_display}",
                 "",
@@ -869,23 +875,23 @@ async def get_team_analysis(
                 "",
                 f"📊 Individual Shooting (min 3 FGA):"
             ]
-            
+
             # Show individual shooting for players with significant attempts
             shooters = [p for p in team_players if p.get("field_goals_attempted", 0) >= 3]
             shooters.sort(key=lambda x: x.get("field_goal_percent", 0), reverse=True)
-            
+
             for player in shooters:
                 name = player['name']
                 fg_made = player.get("field_goals_made", 0)
                 fg_att = player.get("field_goals_attempted", 0)
                 fg_pct = player.get("field_goal_percent", 0)
-                
+
                 result.append(f"  {name:20s} - {fg_made}/{fg_att} ({fg_pct:.1f}%)")
-            
+
             return "\n".join(result)
-            
+
         return f"⚠️ Invalid analysis type '{analysis_type}'. Use: roster, efficiency, shooting_splits"
-        
+
     except Exception as e:
         print(f"❌ Error in get_team_analysis: {str(e)}")
         return f"⚠️ Error analyzing team: {str(e)}"
@@ -898,32 +904,32 @@ async def get_player_trending(
 ):
     """
     Get detailed trending analysis for a specific player.
-    
+
     Args:
         player_name: Name of the player
         league_id: Optional league filter
         games_to_analyze: Number of recent games to analyze (default 5)
     """
-    
+
     try:
         # Get player records
         records = fetch_player_records(player_name, league_id=league_id)
-        
+
         if not records:
             return f"❌ No records found for {player_name}."
-        
+
         if len(records) < 3:
             return f"⚠️ Need at least 3 games for trending analysis. {player_name} has {len(records)} game(s)."
-        
+
         # Limit to requested number of games
         records = records[:games_to_analyze]
-        
+
         # Get comprehensive trending analysis
         trending_result = analyze_trending(player_name, records)
-        
+
         if not trending_result:
             return f"📊 {player_name} shows consistent performance across {len(records)} recent games."
-        
+
         # Add game-by-game breakdown
         game_breakdown = []
         for i, game in enumerate(records[:3], 1):
@@ -932,9 +938,9 @@ async def get_player_trending(
             reb = game.get("rebounds_total", 0)
             ast = game.get("assists", 0)
             date = game.get("game_date", "Unknown")
-            
+
             game_breakdown.append(f"Game {i} ({date}): {pts}pts, {reb}reb, {ast}ast ({fg_pct:.1f}% FG)")
-        
+
         detailed_response = [
             f"📈 **Trending Analysis for {player_name}**",
             "",
@@ -943,9 +949,9 @@ async def get_player_trending(
             f"📋 **Recent Game Breakdown**:",
             *game_breakdown
         ]
-        
+
         return "\n".join(detailed_response)
-        
+
     except Exception as e:
         print(f"❌ Error in get_player_trending: {str(e)}")
         return f"⚠️ Error analyzing trends for {player_name}: {str(e)}"
@@ -958,34 +964,34 @@ async def get_advanced_insights(
 ):
     """
     Generate advanced basketball insights like top performers, starting 5 recommendations, etc.
-    
+
     Args:
         insight_type: "top_performers", "starting_five", "game_impact", "clutch_players"
         limit: Number of results to return
         team_filter: Filter by specific team
         game_date: Filter by specific game date
     """
-    
+
     try:
         from app.utils.chat_data import supabase
-        
+
         # Build base query
         query = supabase.table("player_stats").select("*")
-        
+
         if team_filter:
             query = query.eq("team", team_filter)
         if game_date:
             query = query.eq("game_date", game_date)
         else:
             query = query.order("game_date", desc=True).limit(50)  # Recent games
-            
+
         response = query.execute()
-        
+
         if not response.data:
             return "❌ No data found for analysis."
-        
+
         players = response.data
-        
+
         if insight_type == "top_performers":
             # Multi-criteria performance ranking
             def performance_score(player):
@@ -996,41 +1002,41 @@ async def get_advanced_insights(
                 blk = player.get("blocks", 0)
                 to = player.get("turnovers", 0)
                 fg_pct = player.get("field_goal_percent", 0)
-                
+
                 # Weighted performance score
                 score = (pts * 1.0) + (reb * 0.8) + (ast * 1.2) + (stl * 1.5) + (blk * 1.5) - (to * 1.0) + (fg_pct * 0.3)
                 return score
-            
+
             # Sort by performance score
             for player in players:
                 player['perf_score'] = performance_score(player)
-            
+
             players.sort(key=lambda x: x.get('perf_score', 0), reverse=True)
             top_performers = players[:limit]
-            
+
             result = [f"🌟 Top {limit} Overall Performers:\n"]
-            
+
             for i, player in enumerate(top_performers, 1):
                 pts = player.get("points", 0)
                 reb = player.get("rebounds_total", 0)
                 ast = player.get("assists", 0)
                 team = player.get("team", "")
                 score = player.get('perf_score', 0)
-                
+
                 result.append(f"{i}. {player['name']} ({team}) - {pts}pts/{reb}reb/{ast}ast (Score: {score:.1f})")
-            
+
             return "\n".join(result)
-            
+
         elif insight_type == "starting_five":
             # Recommend starting 5 based on performance
             if not team_filter:
                 return "⚠️ Please specify a team for starting 5 recommendation."
-            
+
             team_players = [p for p in players if p.get("team") == team_filter]
-            
+
             if len(team_players) < 5:
                 return f"⚠️ Not enough players found for {team_filter}."
-            
+
             # Score players by position value (simplified)
             def starting_value(player):
                 pts = player.get("points", 0)
@@ -1038,55 +1044,54 @@ async def get_advanced_insights(
                 ast = player.get("assists", 0)
                 mins = player.get("minutes", 0)
                 fg_pct = player.get("field_goal_percent", 0)
-                
+
                 # Value formula emphasizing minutes and efficiency
                 value = (pts + reb + ast) * (mins / 40) * (fg_pct / 100 + 0.5)
                 return value
-            
+
             # Sort team by value and take top 5
             for player in team_players:
                 player['starting_value'] = starting_value(player)
-            
+
             team_players.sort(key=lambda x: x.get('starting_value', 0), reverse=True)
             starting_five = team_players[:5]
-            
+
             result = [f"🏀 Recommended Starting 5 for {team_filter}:\n"]
-            
+
             positions = ["PG", "SG", "SF", "PF", "C"]  # Simplified position assignment
-            
+
             for i, player in enumerate(starting_five):
                 pos = positions[i] if i < len(positions) else "F"
                 pts = player.get("points", 0)
                 reb = player.get("rebounds_total", 0)
                 ast = player.get("assists", 0)
                 mins = player.get("minutes", 0)
-                
+
                 result.append(f"{pos}: {player['name']} - {pts}pts/{reb}reb/{ast}ast ({mins}min)")
-            
+
             return "\n".join(result)
-            
+
         elif insight_type == "game_impact":
             # Players with highest +/- and clutch stats
             players_with_impact = [p for p in players if p.get("plus_minus") is not None]
             players_with_impact.sort(key=lambda x: x.get("plus_minus", -999), reverse=True)
-            
+
             top_impact = players_with_impact[:limit]
-            
+
             result = [f"💥 Highest Game Impact (+/-): \n"]
-            
+
             for i, player in enumerate(top_impact, 1):
                 plus_minus = player.get("plus_minus", 0)
                 pts = player.get("points", 0)
                 team = player.get("team", "")
                 mins = player.get("minutes", 0)
-                
+
                 result.append(f"{i}. {player['name']} ({team}) - {plus_minus:+d} (+/-), {pts}pts in {mins}min")
-            
+
             return "\n".join(result)
-            
+
         return f"⚠️ Invalid insight type '{insight_type}'. Use: top_performers, starting_five, game_impact"
-        
+
     except Exception as e:
         print(f"❌ Error in get_advanced_insights: {str(e)}")
         return f"⚠️ Error generating insights: {str(e)}"
-
