@@ -147,6 +147,24 @@ async def get_player_stats(
     print(f"📦 Records retrieved for {player_name} (league: {league_id}):", records)
 
     if not records:
+        # Fallback to players table for basic info
+        try:
+            from app.utils.chat_data import supabase
+            fallback_query = supabase.table("players").select("*").ilike("name", f"%{player_name}%")
+            if league_id:
+                fallback_query = fallback_query.eq("league_id", league_id)
+            fallback_response = fallback_query.execute()
+            
+            if fallback_response.data:
+                player_info = fallback_response.data[0]
+                return f"📋 Found {player_name} in the system:\n" + \
+                       f"Team: {player_info.get('team', 'N/A')}\n" + \
+                       f"Position: {player_info.get('position', 'N/A')}\n" + \
+                       f"Jersey #: {player_info.get('number', 'N/A')}\n" + \
+                       f"Note: No game stats available yet."
+        except Exception as e:
+            print(f"⚠️ Fallback query failed: {e}")
+        
         return f"❌ No records found for {player_name}."
 
     if mode == "latest":

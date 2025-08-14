@@ -16,17 +16,29 @@ def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = 
     if not player_name:
         return []
 
-    query = supabase.table("player_stats").select("*").ilike("name", player_name)
+    # Try exact match first, then fuzzy match
+    queries_to_try = [
+        f"{player_name}",  # Exact match
+        f"%{player_name}%",  # Contains match
+        f"{player_name}%",  # Starts with match
+    ]
+    
+    for search_pattern in queries_to_try:
+        query = supabase.table("player_stats").select("*").ilike("name", search_pattern)
 
-    # Add league_id filter if provided
-    if league_id:
-        query = query.eq("league_id", league_id)
+        # Add league_id filter if provided
+        if league_id:
+            query = query.eq("league_id", league_id)
 
-    response = query.order("game_date", desc=True).limit(5).execute()
+        response = query.order("game_date", desc=True).limit(5).execute()
 
-    if getattr(response, "error", None):
-        print(f"❌ Supabase fetch error: {response.error}")
-        return []
+        if getattr(response, "error", None):
+            print(f"❌ Supabase fetch error: {response.error}")
+            continue
 
-    print(f"✅ Supabase returned {len(response.data)} records for '{player_name}'")
-    return response.data
+        if response.data:
+            print(f"✅ Supabase returned {len(response.data)} records for '{player_name}' using pattern '{search_pattern}'")
+            return response.data
+    
+    print(f"❌ No records found for '{player_name}' in any search pattern")
+    return []e.data
