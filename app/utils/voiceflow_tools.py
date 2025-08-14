@@ -210,14 +210,16 @@ async def get_player_stats(
     # Infer mode from natural language if not provided
     if not mode and user_message:
         msg = user_message.lower()
-        if any(kw in msg for kw in ["average", "per game", "typically", "on average"]):
+        print(f"🧠 Inferring mode from message: '{user_message}'")
+        if any(kw in msg for kw in ["average", "per game", "typically", "on average", "averages"]):
             mode = "average"
         elif any(kw in msg for kw in ["total", "in total", "overall", "combined"]):
             mode = "total"
         elif any(kw in msg for kw in ["last game", "most recent", "latest", "previous match", "yesterday"]):
             mode = "latest"
         else:
-            mode = "latest"  # fallback
+            mode = "average"  # Default to average instead of latest
+        print(f"🎯 Selected mode: {mode}")
 
         if not player_name:
             return "⚠️ No player name provided."
@@ -248,6 +250,7 @@ async def get_player_stats(
         
         return f"❌ No records found for {player_name}."
 
+    # Only filter to latest record if specifically requested
     if mode == "latest":
         records = [records[0]]
 
@@ -300,9 +303,23 @@ async def get_player_stats(
                     results.append(f"📉 No valid data to calculate {stat_key.replace('_', ' ').title()}.")
                     continue
 
-                pct = round((total_makes / total_atts) * 100, 2)
-                avg_attempts = round(total_atts / len(records), 2)
-                results.append(f"🎯 {player_name}'s {stat_key.replace('_', ' ').title()} is {pct}% (avg {avg_attempts} attempts/game).")
+                if mode == "average":
+                    pct = round((total_makes / total_atts) * 100, 2)
+                    avg_attempts = round(total_atts / len(records), 2)
+                    games_count = len(records)
+                    results.append(f"🎯 {player_name} averages {pct}% {stat_key.replace('_', ' ').title()} on {avg_attempts} attempts/game ({games_count} games).")
+                elif mode == "total":
+                    pct = round((total_makes / total_atts) * 100, 2)
+                    results.append(f"🎯 {player_name}'s overall {stat_key.replace('_', ' ').title()} is {pct}% ({total_makes}/{total_atts}).")
+                elif mode == "latest":
+                    latest_record = records[0]
+                    latest_makes = latest_record.get(makes_key, 0)
+                    latest_atts = latest_record.get(atts_key, 0)
+                    if latest_atts > 0:
+                        latest_pct = round((latest_makes / latest_atts) * 100, 2)
+                        results.append(f"🎯 In the latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ').title()} ({latest_makes}/{latest_atts}).")
+                    else:
+                        results.append(f"📉 {player_name} had no {stat_key.replace('_', ' ').title()} attempts in the latest game.")
 
             else:
                 values = [
@@ -318,10 +335,12 @@ async def get_player_stats(
 
                 if mode == "average":
                     stat_val = round(sum(values) / len(values), 2)
-                    results.append(f"📊 {player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game.")
+                    games_count = len(values)
+                    results.append(f"📊 {player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game ({games_count} games).")
                 elif mode == "total":
                     stat_val = round(sum(values), 2)
-                    results.append(f"📈 {player_name} has a total of {stat_val} {stat_key.replace('_', ' ')}.")
+                    games_count = len(values)
+                    results.append(f"📈 {player_name} has a total of {stat_val} {stat_key.replace('_', ' ')} ({games_count} games).")
                 elif mode == "latest":
                     stat_val = round(values[0], 2)
                     results.append(f"🆕 In the latest game, {player_name} recorded {stat_val} {stat_key.replace('_', ' ')}.")
