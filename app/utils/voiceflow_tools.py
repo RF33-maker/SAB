@@ -303,6 +303,14 @@ async def get_player_stats(
 
     results = []
 
+    # Handle team info request specifically first
+    if user_message and any(phrase in user_message.lower() for phrase in ["team", "play for", "who does", "what team"]):
+        if records:
+            team_name = records[0].get("team", "Unknown Team")
+            return f"{player_name} plays for {team_name}."
+        else:
+            return f"❌ No team information found for {player_name}."
+
     for raw_stat in stat_list or []:
         stat_key = normalize_stat(raw_stat)
         print(f"🧪 Processing stat: {raw_stat} → {stat_key}")
@@ -370,9 +378,9 @@ async def get_player_stats(
             print(f"❌ Error processing stat '{stat_key}': {str(e)}")
             results.append(f"⚠️ Error processing {stat_key.replace('_', ' ')}.")
 
-        if not results:
-            print(f"❗ No results generated for stat_list: {stat_list}")
-            return f"⚠️ Stats not found or fields mismatched for {player_name}."
+    if not results:
+        print(f"❗ No results generated for stat_list: {stat_list}")
+        return f"⚠️ Stats not found or fields mismatched for {player_name}."
 
 
     if format_mode == "cleaned":
