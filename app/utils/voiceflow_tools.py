@@ -324,23 +324,32 @@ async def get_player_stats(
                 if records:
                     team_name = records[0].get("team", "Unknown Team")
                     results.append(f"{player_name} plays for {team_name}.")
+                    print(f"✅ Added team result: {player_name} plays for {team_name}")
                 else:
                     results.append(f"❌ No team information found for {player_name}.")
+                    print(f"❌ No team info found")
                 continue
 
             # Handle percentage stats - calculate from makes/attempts
             elif stat_key in PERCENTAGE_STATS:
+                print(f"🎯 Processing percentage stat: {stat_key}")
                 makes_key, atts_key = PERCENTAGE_STATS[stat_key]
+                print(f"🔑 Looking for {makes_key} and {atts_key} in records")
                 
                 if mode == "latest":
                     latest_record = records[0]
                     latest_makes = latest_record.get(makes_key, 0)
                     latest_atts = latest_record.get(atts_key, 0)
+                    print(f"📊 Latest: {latest_makes}/{latest_atts}")
                     if latest_atts > 0:
                         latest_pct = round((latest_makes / latest_atts) * 100, 1)
-                        results.append(f"In his latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ')} ({latest_makes}/{latest_atts}).")
+                        result_text = f"In his latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ')} ({latest_makes}/{latest_atts})."
+                        results.append(result_text)
+                        print(f"✅ Added percentage result: {result_text}")
                     else:
-                        results.append(f"{player_name} had no {stat_key.replace('_', ' ')} attempts in his latest game.")
+                        result_text = f"{player_name} had no {stat_key.replace('_', ' ')} attempts in his latest game."
+                        results.append(result_text)
+                        print(f"✅ Added no attempts result: {result_text}")
                 elif mode == "average":
                     # Calculate average percentage from all games
                     game_percentages = []
@@ -352,45 +361,70 @@ async def get_player_stats(
                     
                     if game_percentages:
                         avg_pct = round(sum(game_percentages) / len(game_percentages), 1)
-                        results.append(f"{player_name} averages {avg_pct}% {stat_key.replace('_', ' ')} per game.")
+                        result_text = f"{player_name} averages {avg_pct}% {stat_key.replace('_', ' ')} per game."
+                        results.append(result_text)
+                        print(f"✅ Added average percentage result: {result_text}")
                     else:
-                        results.append(f"📉 No valid {stat_key.replace('_', ' ')} attempts for {player_name}.")
+                        result_text = f"📉 No valid {stat_key.replace('_', ' ')} attempts for {player_name}."
+                        results.append(result_text)
+                        print(f"✅ Added no valid attempts result: {result_text}")
                 elif mode == "total":
                     # Calculate overall percentage from total makes/attempts
                     total_makes = sum(r.get(makes_key, 0) for r in records)
                     total_atts = sum(r.get(atts_key, 0) for r in records)
                     if total_atts > 0:
                         total_pct = round((total_makes / total_atts) * 100, 1)
-                        results.append(f"{player_name} shoots {total_pct}% {stat_key.replace('_', ' ')} overall ({total_makes}/{total_atts}).")
+                        result_text = f"{player_name} shoots {total_pct}% {stat_key.replace('_', ' ')} overall ({total_makes}/{total_atts})."
+                        results.append(result_text)
+                        print(f"✅ Added total percentage result: {result_text}")
                     else:
-                        results.append(f"📉 No valid {stat_key.replace('_', ' ')} attempts for {player_name}.")
+                        result_text = f"📉 No valid {stat_key.replace('_', ' ')} attempts for {player_name}."
+                        results.append(result_text)
+                        print(f"✅ Added no valid total attempts result: {result_text}")
 
             else:
                 # Handle regular counting stats
+                print(f"🔢 Processing counting stat: {stat_key}")
                 values = []
-                for r in records:
+                for i, r in enumerate(records):
                     val = r.get(stat_key)
+                    print(f"📊 Record {i}: {stat_key} = {val} (type: {type(val)})")
                     if val is not None:
                         try:
-                            values.append(float(val))
-                        except (ValueError, TypeError):
+                            float_val = float(val)
+                            values.append(float_val)
+                            print(f"✅ Added value: {float_val}")
+                        except (ValueError, TypeError) as e:
+                            print(f"⚠️ Could not convert {val} to float: {e}")
                             continue
 
+                print(f"📊 Total valid values for {stat_key}: {len(values)} = {values}")
+
                 if not values:
-                    results.append(f"📉 No valid data for {stat_key.replace('_', ' ').title()}.")
+                    result_text = f"📉 No valid data for {stat_key.replace('_', ' ').title()}."
+                    results.append(result_text)
+                    print(f"❌ No valid data for {stat_key}")
                     continue
 
                 if mode == "average":
                     stat_val = round(sum(values) / len(values), 1)
-                    results.append(f"{player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game.")
+                    result_text = f"{player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game."
+                    results.append(result_text)
+                    print(f"✅ Added average result: {result_text}")
                 elif mode == "total":
                     stat_val = round(sum(values), 1)
-                    results.append(f"{player_name} has {stat_val} total {stat_key.replace('_', ' ')}.")
+                    result_text = f"{player_name} has {stat_val} total {stat_key.replace('_', ' ')}."
+                    results.append(result_text)
+                    print(f"✅ Added total result: {result_text}")
                 elif mode == "latest":
                     stat_val = round(values[0], 1)
-                    results.append(f"In his latest game, {player_name} had {stat_val} {stat_key.replace('_', ' ')}.")
+                    result_text = f"In his latest game, {player_name} had {stat_val} {stat_key.replace('_', ' ')}."
+                    results.append(result_text)
+                    print(f"✅ Added latest result: {result_text}")
         except Exception as e:
             print(f"❌ Error processing stat '{stat_key}': {str(e)}")
+            import traceback
+            print(f"🔍 Full traceback: {traceback.format_exc()}")
             results.append(f"⚠️ Error processing {stat_key.replace('_', ' ')}.")
 
     if not results:
