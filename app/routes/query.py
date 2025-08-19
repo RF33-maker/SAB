@@ -263,8 +263,8 @@ def chat_league():
             else:
                 raw_output = "Tool not recognized"
 
-            # Submit tool output
-            client.beta.threads.runs.submit_tool_outputs(
+            # Submit tool output and wait for completion
+            run = client.beta.threads.runs.submit_tool_outputs_and_poll(
                 thread_id=thread_id,
                 run_id=run.id,
                 tool_outputs=[{
@@ -273,12 +273,12 @@ def chat_league():
                 }]
             )
 
-            # Get final response
-            run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            # Get the assistant's final response
             messages = client.beta.threads.messages.list(thread_id=thread_id)
+            assistant_response = messages.data[0].content[0].text.value if messages.data else str(raw_output)
             
             return jsonify({
-                "response": raw_output,
+                "response": assistant_response,
                 "thread_id": thread_id,
                 "league_id": league_id
             })
