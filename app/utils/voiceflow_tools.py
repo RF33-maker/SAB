@@ -192,7 +192,7 @@ async def get_player_stats(
     user_message: Optional[str] = None,
     format_mode: Optional[str] = None,
     league_id: Optional[str] = None,
-    trending_analysis: Optional[bool] = True  # Add trending analysis by default
+    trending_analysis: Optional[bool] = False  # Only add trending when specifically requested
 ):
 
     global last_player_name
@@ -312,7 +312,7 @@ async def get_player_stats(
             if stat_key == "team" or raw_stat.lower() in ["team", "who does he play for", "what team"]:
                 if records:
                     team_name = records[0].get("team", "Unknown Team")
-                    results.append(f"🏀 {player_name} plays for {team_name}.")
+                    results.append(f"{player_name} plays for {team_name}.")
                 else:
                     results.append(f"❌ No team information found for {player_name}.")
                 continue
@@ -331,21 +331,19 @@ async def get_player_stats(
 
                 if mode == "average":
                     pct = round((total_makes / total_atts) * 100, 2)
-                    avg_attempts = round(total_atts / len(records), 2)
-                    games_count = len(records)
-                    results.append(f"🎯 {player_name} averages {pct}% {stat_key.replace('_', ' ').title()} on {avg_attempts} attempts/game ({games_count} games).")
+                    results.append(f"{player_name} averages {pct}% {stat_key.replace('_', ' ')}.")
                 elif mode == "total":
                     pct = round((total_makes / total_atts) * 100, 2)
-                    results.append(f"🎯 {player_name}'s overall {stat_key.replace('_', ' ').title()} is {pct}% ({total_makes}/{total_atts}).")
+                    results.append(f"{player_name} shoots {pct}% {stat_key.replace('_', ' ')} overall ({total_makes}/{total_atts}).")
                 elif mode == "latest":
                     latest_record = records[0]
                     latest_makes = latest_record.get(makes_key, 0)
                     latest_atts = latest_record.get(atts_key, 0)
                     if latest_atts > 0:
                         latest_pct = round((latest_makes / latest_atts) * 100, 2)
-                        results.append(f"🎯 In the latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ').title()} ({latest_makes}/{latest_atts}).")
+                        results.append(f"In his latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ')} ({latest_makes}/{latest_atts}).")
                     else:
-                        results.append(f"📉 {player_name} had no {stat_key.replace('_', ' ').title()} attempts in the latest game.")
+                        results.append(f"{player_name} had no {stat_key.replace('_', ' ')} attempts in his latest game.")
 
             else:
                 values = [
@@ -361,15 +359,13 @@ async def get_player_stats(
 
                 if mode == "average":
                     stat_val = round(sum(values) / len(values), 2)
-                    games_count = len(values)
-                    results.append(f"📊 {player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game ({games_count} games).")
+                    results.append(f"{player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game.")
                 elif mode == "total":
                     stat_val = round(sum(values), 2)
-                    games_count = len(values)
-                    results.append(f"📈 {player_name} has a total of {stat_val} {stat_key.replace('_', ' ')} ({games_count} games).")
+                    results.append(f"{player_name} has {stat_val} total {stat_key.replace('_', ' ')}.")
                 elif mode == "latest":
                     stat_val = round(values[0], 2)
-                    results.append(f"🆕 In the latest game, {player_name} recorded {stat_val} {stat_key.replace('_', ' ')}.")
+                    results.append(f"In his latest game, {player_name} had {stat_val} {stat_key.replace('_', ' ')}.")
         except Exception as e:
             print(f"❌ Error processing stat '{stat_key}': {str(e)}")
             results.append(f"⚠️ Error processing {stat_key.replace('_', ' ')}.")
@@ -466,14 +462,8 @@ async def get_player_stats(
         return output, records
 
 
-    # Add trending analysis if we have enough games and it's requested
-    if trending_analysis and len(records) >= 3:
-        trending_insights = analyze_trending(player_name, records)
-        if trending_insights:
-            results.append(f"\n📈 **Trending Analysis**: {trending_insights}")
-
-    # Always provide intelligent conversational analysis when we have multiple stats
-    if len(stat_list) > 3 or not stat:  # Multiple stats or general query
+    # Only add detailed analysis if specifically asking for general player performance (no specific stat)
+    if not stat and not stat_list:  # Multiple stats or general query
         record = records[0]
         pts = record.get("points", 0)
         fg_made = record.get("field_goals_made", 0)
