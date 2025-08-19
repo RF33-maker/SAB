@@ -181,7 +181,7 @@ def normalize_stat(raw: str) -> str:
     if not raw:
         return ""
     key = raw.strip().lower().replace("-", " ").replace("_", " ")
-    # Don't replace "three" and "two" with numbers - keep original field names
+    key = key.replace("three", "3").replace("two", "2")
     return STAT_ALIASES.get(key, key.replace(" ", "_"))
 
 async def get_player_stats(
@@ -192,25 +192,26 @@ async def get_player_stats(
     user_message: Optional[str] = None,
     format_mode: Optional[str] = None,
     league_id: Optional[str] = None,
-    trending_analysis: Optional[bool] = False  # Only add trending when specifically requested
+    trending_analysis: Optional[bool] = True  # Add trending analysis by default
 ):
 
     global last_player_name
 
-    # Clear logic for player name resolution
-    if player_name is None or player_name == "":
-        # No player name provided - try to extract from message or use cached
+    # Only use cached player name if explicitly empty string or None AND no player name in user message
+    if player_name == "":
+        player_name = last_player_name
+    elif not player_name:
+        # Try to extract player name from user message before using cached name
         if user_message:
-            # Try to extract player name from user message
+            # Look for common name patterns in the message
             import re
             # Match patterns like "How is [Player Name] doing?" or "[Player Name]'s stats"
             name_patterns = [
-                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)\s*(?:'s|is|has|scored|shooting)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)\s+(?:doing|performing|stats)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\([A-Z]+\)",  # Specifically match "Name (Position)"
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s*(?:'s|is|has|scored|shooting)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s+(?:doing|performing|stats)"
             ]
-
+            
             for pattern in name_patterns:
                 match = re.search(pattern, user_message, re.IGNORECASE)
                 if match:
@@ -218,19 +219,15 @@ async def get_player_stats(
                     print(f"🎯 Extracted player name from message: '{extracted_name}'")
                     player_name = extracted_name
                     break
-
+            
             # If no name found in message, use cached name
             if not player_name:
                 player_name = last_player_name
         else:
-            # No message, use cached name
             player_name = last_player_name
-    else:
-        # Player name was explicitly provided - use it as-is
-        print(f"🎯 Using explicitly provided player name: '{player_name}'")
 
-    # Update last player name cache if we have a valid one
-    if player_name and player_name.strip():
+    # Update last player name if we have a valid one
+    if player_name:
         last_player_name = player_name
 
     print(f"🔍 Final player_name being used: '{player_name}'")
@@ -269,11 +266,11 @@ async def get_player_stats(
 
             if fallback_response.data:
                 player_info = fallback_response.data[0]
-                return (f"📋 Found {player_name} in the system:\n" +
-                        f"Team: {player_info.get('team', 'N/A')}\n" +
-                        f"Position: {player_info.get('position', 'N/A')}\n" +
-                        f"Jersey #: {player_info.get('number', 'N/A')}\n" +
-                        f"Note: No game stats available yet.")
+                return f"📋 Found {player_name} in the system:\n" + \
+                       f"Team: {player_info.get('team', 'N/A')}\n" + \
+                       f"Position: {player_info.get('position', 'N/A')}\n" + \
+                       f"Jersey #: {player_info.get('number', 'N/A')}\n" + \
+                       f"Note: No game stats available yet."
         except Exception as e:
             print(f"⚠️ Fallback query failed: {e}")
 
@@ -306,129 +303,80 @@ async def get_player_stats(
 
     results = []
 
-    # Handle team info request specifically first - return immediately
-    if user_message and any(phrase in user_message.lower() for phrase in ["team", "play for", "who does", "what team"]):
-        if records:
-            team_name = records[0].get("team", "Unknown Team")
-            print(f"✅ Returning team info: {player_name} plays for {team_name}")
-            return f"{player_name} plays for {team_name}."
-        else:
-            print(f"❌ No team information found for {player_name}")
-            return f"❌ No team information found for {player_name}."
-
     for raw_stat in stat_list or []:
         stat_key = normalize_stat(raw_stat)
         print(f"🧪 Processing stat: {raw_stat} → {stat_key}")
 
         try:
-            # Handle team info request - return immediately
+            # Handle team info request
             if stat_key == "team" or raw_stat.lower() in ["team", "who does he play for", "what team"]:
                 if records:
                     team_name = records[0].get("team", "Unknown Team")
-                    print(f"✅ Returning team info directly: {player_name} plays for {team_name}")
-                    return f"{player_name} plays for {team_name}."
+                    results.append(f"🏀 {player_name} plays for {team_name}.")
                 else:
-                    print(f"❌ No team info found")
-                    return f"❌ No team information found for {player_name}."
+                    results.append(f"❌ No team information found for {player_name}.")
+                continue
 
-            # Handle percentage stats - calculate from makes/attempts
+            # Handle percentage stats
             elif stat_key in PERCENTAGE_STATS:
-                print(f"🎯 Processing percentage stat: {stat_key}")
                 makes_key, atts_key = PERCENTAGE_STATS[stat_key]
-                print(f"🔑 Looking for {makes_key} and {atts_key} in records")
+                makes = [r.get(makes_key, 0) for r in records]
+                atts = [r.get(atts_key, 0) for r in records]
+                total_makes = sum([float(m) for m in makes if m is not None])
+                total_atts = sum([float(a) for a in atts if a is not None])
 
-                if mode == "latest":
+                if total_atts == 0:
+                    results.append(f"📉 No valid data to calculate {stat_key.replace('_', ' ').title()}.")
+                    continue
+
+                if mode == "average":
+                    pct = round((total_makes / total_atts) * 100, 2)
+                    avg_attempts = round(total_atts / len(records), 2)
+                    games_count = len(records)
+                    results.append(f"🎯 {player_name} averages {pct}% {stat_key.replace('_', ' ').title()} on {avg_attempts} attempts/game ({games_count} games).")
+                elif mode == "total":
+                    pct = round((total_makes / total_atts) * 100, 2)
+                    results.append(f"🎯 {player_name}'s overall {stat_key.replace('_', ' ').title()} is {pct}% ({total_makes}/{total_atts}).")
+                elif mode == "latest":
                     latest_record = records[0]
                     latest_makes = latest_record.get(makes_key, 0)
                     latest_atts = latest_record.get(atts_key, 0)
-                    print(f"📊 Latest: {latest_makes}/{latest_atts}")
                     if latest_atts > 0:
-                        latest_pct = round((latest_makes / latest_atts) * 100, 1)
-                        result_text = f"In his latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ')} ({latest_makes}/{latest_atts})."
-                        results.append(result_text)
-                        print(f"✅ Added percentage result: {result_text}")
+                        latest_pct = round((latest_makes / latest_atts) * 100, 2)
+                        results.append(f"🎯 In the latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ').title()} ({latest_makes}/{latest_atts}).")
                     else:
-                        result_text = f"{player_name} had no {stat_key.replace('_', ' ')} attempts in his latest game."
-                        results.append(result_text)
-                        print(f"✅ Added no attempts result: {result_text}")
-                elif mode == "average":
-                    # Calculate average percentage from all games
-                    game_percentages = []
-                    for r in records:
-                        makes = r.get(makes_key, 0)
-                        atts = r.get(atts_key, 0)
-                        if atts > 0:
-                            game_percentages.append((makes / atts) * 100)
-
-                    if game_percentages:
-                        avg_pct = round(sum(game_percentages) / len(game_percentages), 1)
-                        result_text = f"{player_name} averages {avg_pct}% {stat_key.replace('_', ' ')} per game."
-                        results.append(result_text)
-                        print(f"✅ Added average percentage result: {result_text}")
-                    else:
-                        result_text = f"📉 No valid {stat_key.replace('_', ' ')} attempts for {player_name}."
-                        results.append(result_text)
-                        print(f"✅ Added no data result: {result_text}")
-                elif mode == "total":
-                    # Calculate overall percentage from total makes/attempts
-                    total_makes = sum(r.get(makes_key, 0) for r in records)
-                    total_atts = sum(r.get(atts_key, 0) for r in records)
-                    if total_atts > 0:
-                        total_pct = round((total_makes / total_atts) * 100, 1)
-                        result_text = f"{player_name} shoots {total_pct}% {stat_key.replace('_', ' ')} overall ({total_makes}/{total_atts})."
-                        results.append(result_text)
-                        print(f"✅ Added total percentage result: {result_text}")
-                    else:
-                        result_text = f"📉 No valid {stat_key.replace('_', ' ')} attempts for {player_name}."
-                        results.append(result_text)
-                        print(f"✅ Added no attempts result: {result_text}")
+                        results.append(f"📉 {player_name} had no {stat_key.replace('_', ' ').title()} attempts in the latest game.")
 
             else:
-                # Handle regular counting stats
-                print(f"🔢 Processing counting stat: {stat_key}")
-                values = []
-                for r in records:
-                    val = r.get(stat_key)
-                    print(f"📊 Record : {stat_key} = {val} (type: {type(val)})")
-                    if val is not None:
-                        try:
-                            float_val = float(val)
-                            values.append(float_val)
-                            print(f"✅ Added value: {float_val}")
-                        except (ValueError, TypeError) as e:
-                            print(f"⚠️ Could not convert {val} to float: {e}")
-                            continue
+                values = [
+                    float(r.get(stat_key, 0))
+                    for r in records
+                    if r.get(stat_key) is not None and isinstance(r.get(stat_key), (int, float, Decimal))
+                ]
 
-                print(f"📊 Total valid values for {stat_key}: {len(values)} = {values}")
 
                 if not values:
                     results.append(f"📉 No valid data for {stat_key.replace('_', ' ').title()}.")
                     continue
 
                 if mode == "average":
-                    stat_val = round(sum(values) / len(values), 1)
-                    result_text = f"{player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game."
-                    results.append(result_text)
-                    print(f"✅ Added average result: {result_text}")
+                    stat_val = round(sum(values) / len(values), 2)
+                    games_count = len(values)
+                    results.append(f"📊 {player_name} averages {stat_val} {stat_key.replace('_', ' ')} per game ({games_count} games).")
                 elif mode == "total":
-                    stat_val = round(sum(values), 1)
-                    result_text = f"{player_name} has {stat_val} total {stat_key.replace('_', ' ')}."
-                    results.append(result_text)
-                    print(f"✅ Added total result: {result_text}")
+                    stat_val = round(sum(values), 2)
+                    games_count = len(values)
+                    results.append(f"📈 {player_name} has a total of {stat_val} {stat_key.replace('_', ' ')} ({games_count} games).")
                 elif mode == "latest":
-                    stat_val = round(values[0], 1)
-                    result_text = f"In his latest game, {player_name} had {stat_val} {stat_key.replace('_', ' ')}."
-                    results.append(result_text)
-                    print(f"✅ Added latest result: {result_text}")
+                    stat_val = round(values[0], 2)
+                    results.append(f"🆕 In the latest game, {player_name} recorded {stat_val} {stat_key.replace('_', ' ')}.")
         except Exception as e:
             print(f"❌ Error processing stat '{stat_key}': {str(e)}")
-            import traceback
-            print(f"🔍 Full traceback: {traceback.format_exc()}")
             results.append(f"⚠️ Error processing {stat_key.replace('_', ' ')}.")
 
-    if not results:
-        print(f"❗ No results generated for stat_list: {stat_list}")
-        return f"⚠️ Stats not found or fields mismatched for {player_name}."
+        if not results:
+            print(f"❗ No results generated for stat_list: {stat_list}")
+            return f"⚠️ Stats not found or fields mismatched for {player_name}."
 
 
     if format_mode == "cleaned":
@@ -518,8 +466,14 @@ async def get_player_stats(
         return output, records
 
 
-    # Only add detailed analysis if specifically asking for general player performance (no specific stat)
-    if not stat and not stat_list:  # Multiple stats or general query
+    # Add trending analysis if we have enough games and it's requested
+    if trending_analysis and len(records) >= 3:
+        trending_insights = analyze_trending(player_name, records)
+        if trending_insights:
+            results.append(f"\n📈 **Trending Analysis**: {trending_insights}")
+
+    # Always provide intelligent conversational analysis when we have multiple stats
+    if len(stat_list) > 3 or not stat:  # Multiple stats or general query
         record = records[0]
         pts = record.get("points", 0)
         fg_made = record.get("field_goals_made", 0)
@@ -538,7 +492,7 @@ async def get_player_stats(
 
         # Determine overall performance level
         performance_indicators = []
-
+        
         # Scoring assessment
         if pts >= 20:
             performance_indicators.append("strong")
@@ -601,35 +555,35 @@ async def get_player_stats(
 
         # Latest game performance
         game_summary = f"In his latest game, he scored {pts} points"
-
+        
         if fg_att > 0:
             game_summary += f" on {fg_made}/{fg_att} shooting ({actual_fg_pct:.1f}%)"
-
+        
         if three_att > 0:
             game_summary += f", hit {three_made}/{three_att} from three ({three_pct:.1f}%)"
-
+            
         game_summary += f", grabbed {rebounds} rebounds, and dished out {assists} assists"
-
+        
         if turnovers > 0:
             game_summary += f" with {turnovers} turnovers"
-
+            
         game_summary += f". His impact was {impact_level} with a {plus_minus:+d} plus/minus."
 
         response_parts.append(game_summary)
 
         # Add context about what the numbers mean
         context_notes = []
-
+        
         if actual_fg_pct < 35:
             context_notes.append("He needs to improve his shot selection and efficiency")
         elif actual_fg_pct > 55:
             context_notes.append("His shooting efficiency is excellent")
-
+            
         if three_att >= 5 and three_pct < 30:
             context_notes.append("his three-point shooting needs work")
         elif three_att >= 3 and three_pct > 40:
             context_notes.append("his three-point shooting is on point")
-
+            
         if turnovers > assists and assists > 0:
             context_notes.append("he needs to take better care of the ball")
         elif assists > turnovers * 2:
