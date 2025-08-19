@@ -347,6 +347,24 @@ async def get_player_stats(
                     else:
                         results.append(f"📉 {player_name} had no {stat_key.replace('_', ' ').title()} attempts in the latest game.")
 
+                if mode == "average":
+                    pct = round((total_makes / total_atts) * 100, 2)
+                    avg_attempts = round(total_atts / len(records), 2)
+                    games_count = len(records)
+                    results.append(f"🎯 {player_name} averages {pct}% {stat_key.replace('_', ' ').title()} on {avg_attempts} attempts/game ({games_count} games).")
+                elif mode == "total":
+                    pct = round((total_makes / total_atts) * 100, 2)
+                    results.append(f"🎯 {player_name}'s overall {stat_key.replace('_', ' ').title()} is {pct}% ({total_makes}/{total_atts}).")
+                elif mode == "latest":
+                    latest_record = records[0]
+                    latest_makes = latest_record.get(makes_key, 0)
+                    latest_atts = latest_record.get(atts_key, 0)
+                    if latest_atts > 0:
+                        latest_pct = round((latest_makes / latest_atts) * 100, 2)
+                        results.append(f"🎯 In the latest game, {player_name} shot {latest_pct}% {stat_key.replace('_', ' ').title()} ({latest_makes}/{latest_atts}).")
+                    else:
+                        results.append(f"📉 {player_name} had no {stat_key.replace('_', ' ').title()} attempts in the latest game.")
+
             else:
                 values = [
                     float(r.get(stat_key, 0))
