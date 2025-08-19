@@ -472,72 +472,135 @@ async def get_player_stats(
         if trending_insights:
             results.append(f"\n📈 **Trending Analysis**: {trending_insights}")
 
-    # Create a conversational summary instead of listing each stat
-    if len(results) > 5:  # If we have many auto-generated stats, make it conversational
+    # Always provide intelligent conversational analysis when we have multiple stats
+    if len(stat_list) > 3 or not stat:  # Multiple stats or general query
         record = records[0]
         pts = record.get("points", 0)
         fg_made = record.get("field_goals_made", 0)
         fg_att = record.get("field_goals_attempted", 0)
-        fg_pct = record.get("field_goal_percent", 0)
         rebounds = record.get("rebounds_total", 0)
         assists = record.get("assists", 0)
         turnovers = record.get("turnovers", 0)
         plus_minus = record.get("plus_minus", 0)
         three_made = record.get("three_pt_made", 0)
         three_att = record.get("three_pt_attempted", 0)
+        minutes = record.get("minutes_played", "0:00")
 
-        # Build conversational response
-        response_parts = []
-
-        # Scoring
-        # Calculate actual shooting percentage from makes/attempts
+        # Calculate shooting efficiency
         actual_fg_pct = (fg_made / fg_att * 100) if fg_att > 0 else 0
+        three_pct = (three_made / three_att * 100) if three_att > 0 else 0
 
-        if actual_fg_pct > 50:
-            shooting_note = "shot efficiently"
-        elif actual_fg_pct > 40:
-            shooting_note = "shot decently"
+        # Determine overall performance level
+        performance_indicators = []
+        
+        # Scoring assessment
+        if pts >= 20:
+            performance_indicators.append("strong")
+        elif pts >= 12:
+            performance_indicators.append("solid")
+        elif pts >= 8:
+            performance_indicators.append("decent")
         else:
-            shooting_note = "struggled from the field"
+            performance_indicators.append("struggling")
 
-        response_parts.append(f"🏀 {player_name} scored {pts} points on {fg_made}/{fg_att} shooting ({actual_fg_pct:.1f}%) - {shooting_note}")
-
-        # Three-point shooting if relevant
-        if three_att > 0:
-            three_pct = (three_made / three_att) * 100
-            response_parts.append(f"🎯 Hit {three_made}/{three_att} from three ({three_pct:.1f}%)")
-
-        # Other contributions
-        contributions = []
-        if rebounds > 0:
-            contributions.append(f"{rebounds} rebounds")
-        if assists > 0:
-            contributions.append(f"{assists} assists")
-        if turnovers > 0:
-            contributions.append(f"{turnovers} turnovers")
-
-        if contributions:
-            response_parts.append(f"📊 Also had {', '.join(contributions)}")
-
-        # Overall impact
-        if plus_minus > 5:
-            impact = f"strong +{plus_minus} impact"
-        elif plus_minus > 0:
-            impact = f"+{plus_minus} positive contribution"
-        elif plus_minus > -5:
-            impact = f"{plus_minus} neutral impact"
+        # Efficiency assessment
+        if actual_fg_pct >= 50:
+            performance_indicators.append("efficient")
+        elif actual_fg_pct >= 40:
+            performance_indicators.append("acceptable")
         else:
-            impact = f"{plus_minus} struggled to help the team"
+            performance_indicators.append("inefficient")
 
-        response_parts.append(f"⚖️ Overall {impact}")
+        # Plus/minus assessment
+        if plus_minus >= 10:
+            impact_level = "excellent"
+        elif plus_minus >= 5:
+            impact_level = "strong"
+        elif plus_minus >= 0:
+            impact_level = "positive"
+        elif plus_minus >= -5:
+            impact_level = "mixed"
+        else:
+            impact_level = "poor"
 
-        # Add trending analysis
+        # Get trending analysis
+        trend_direction = ""
         if trending_analysis and len(records) >= 3:
             trending_insights = analyze_trending(player_name, records)
-            if trending_insights:
-                response_parts.append(f"📈 {trending_insights}")
+            if "trending upward" in trending_insights:
+                trend_direction = "on an upward trend"
+            elif "trending downward" in trending_insights:
+                trend_direction = "in a downward trend"
+            else:
+                trend_direction = "showing consistent form"
 
-        return ". ".join(response_parts) + "."
+        # Build intelligent response
+        response_parts = []
+
+        # Overall assessment
+        if "strong" in performance_indicators and impact_level in ["excellent", "strong"]:
+            overall_assessment = "performing excellently"
+        elif "solid" in performance_indicators and impact_level in ["strong", "positive"]:
+            overall_assessment = "performing well"
+        elif "decent" in performance_indicators:
+            overall_assessment = "performing okay"
+        else:
+            overall_assessment = "struggling"
+
+        # Start with overall assessment and trend
+        if trend_direction:
+            response_parts.append(f"{player_name} is {overall_assessment} and {trend_direction}.")
+        else:
+            response_parts.append(f"{player_name} is {overall_assessment}.")
+
+        # Latest game performance
+        game_summary = f"In his latest game, he scored {pts} points"
+        
+        if fg_att > 0:
+            game_summary += f" on {fg_made}/{fg_att} shooting ({actual_fg_pct:.1f}%)"
+        
+        if three_att > 0:
+            game_summary += f", hit {three_made}/{three_att} from three ({three_pct:.1f}%)"
+            
+        game_summary += f", grabbed {rebounds} rebounds, and dished out {assists} assists"
+        
+        if turnovers > 0:
+            game_summary += f" with {turnovers} turnovers"
+            
+        game_summary += f". His impact was {impact_level} with a {plus_minus:+d} plus/minus."
+
+        response_parts.append(game_summary)
+
+        # Add context about what the numbers mean
+        context_notes = []
+        
+        if actual_fg_pct < 35:
+            context_notes.append("He needs to improve his shot selection and efficiency")
+        elif actual_fg_pct > 55:
+            context_notes.append("His shooting efficiency is excellent")
+            
+        if three_att >= 5 and three_pct < 30:
+            context_notes.append("his three-point shooting needs work")
+        elif three_att >= 3 and three_pct > 40:
+            context_notes.append("his three-point shooting is on point")
+            
+        if turnovers > assists and assists > 0:
+            context_notes.append("he needs to take better care of the ball")
+        elif assists > turnovers * 2:
+            context_notes.append("he's showing good court vision and ball security")
+
+        if plus_minus < -10:
+            context_notes.append("the team struggled when he was on the court")
+        elif plus_minus > 10:
+            context_notes.append("the team performed much better with him on the floor")
+
+        if context_notes:
+            if len(context_notes) == 1:
+                response_parts.append(f"Analysis: {context_notes[0].capitalize()}.")
+            else:
+                response_parts.append(f"Analysis: {context_notes[0].capitalize()}, and {', '.join(context_notes[1:])}.")
+
+        return " ".join(response_parts)
     else:
         # For specific stat requests, return the normal detailed response
         return " ".join(results)
