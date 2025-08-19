@@ -306,12 +306,14 @@ async def get_player_stats(
 
     results = []
 
-    # Handle team info request specifically first
+    # Handle team info request specifically first - return immediately
     if user_message and any(phrase in user_message.lower() for phrase in ["team", "play for", "who does", "what team"]):
         if records:
             team_name = records[0].get("team", "Unknown Team")
+            print(f"✅ Returning team info: {player_name} plays for {team_name}")
             return f"{player_name} plays for {team_name}."
         else:
+            print(f"❌ No team information found for {player_name}")
             return f"❌ No team information found for {player_name}."
 
     for raw_stat in stat_list or []:
@@ -319,16 +321,15 @@ async def get_player_stats(
         print(f"🧪 Processing stat: {raw_stat} → {stat_key}")
 
         try:
-            # Handle team info request
+            # Handle team info request - return immediately
             if stat_key == "team" or raw_stat.lower() in ["team", "who does he play for", "what team"]:
                 if records:
                     team_name = records[0].get("team", "Unknown Team")
-                    results.append(f"{player_name} plays for {team_name}.")
-                    print(f"✅ Added team result: {player_name} plays for {team_name}")
+                    print(f"✅ Returning team info directly: {player_name} plays for {team_name}")
+                    return f"{player_name} plays for {team_name}."
                 else:
-                    results.append(f"❌ No team information found for {player_name}.")
                     print(f"❌ No team info found")
-                continue
+                    return f"❌ No team information found for {player_name}."
 
             # Handle percentage stats - calculate from makes/attempts
             elif stat_key in PERCENTAGE_STATS:
