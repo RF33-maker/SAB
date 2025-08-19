@@ -181,7 +181,7 @@ def normalize_stat(raw: str) -> str:
     if not raw:
         return ""
     key = raw.strip().lower().replace("-", " ").replace("_", " ")
-    key = key.replace("three", "3").replace("two", "2")
+    # Don't replace "three" and "two" with numbers - keep original field names
     return STAT_ALIASES.get(key, key.replace(" ", "_"))
 
 async def get_player_stats(
@@ -206,10 +206,12 @@ async def get_player_stats(
             # Look for common name patterns in the message
             import re
             # Match patterns like "How is [Player Name] doing?" or "[Player Name]'s stats"
+            # Updated patterns to better handle position indicators
             name_patterns = [
-                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s*(?:'s|is|has|scored|shooting)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s+(?:doing|performing|stats)"
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)\s*(?:'s|is|has|scored|shooting)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)\s+(?:doing|performing|stats)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\([A-Z]+\)",  # Specifically match "Name (Position)"
             ]
             
             for pattern in name_patterns:

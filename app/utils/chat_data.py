@@ -12,33 +12,51 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = None):
-    if not player_name:
-        return []
+def fetch_player_records(player_name, league_id=None, limit=5):
+    """
+    Fetch player records from Supabase, ordered by most recent game first.
+    Returns a list of dictionaries containing player stats.
+    """
+    try:
+        # First try exact match
+        exact_query = supabase.table("player_stats").select("*").eq("name", player_name)
 
-    # Try exact match first, then fuzzy match
-    queries_to_try = [
-        f"{player_name}",  # Exact match
-        f"%{player_name}%",  # Contains match
-        f"{player_name}%",  # Starts with match
-    ]
-    
-    for search_pattern in queries_to_try:
-        query = supabase.table("player_stats").select("*").ilike("name", search_pattern)
+        if league_id:
+            exact_query = exact_query.eq("league_id", league_id)
 
-        # Add league_id filter if provided
+        exact_response = exact_query.order("game_date", desc=True).limit(limit).execute()
+
+        if exact_response.data:
+            print(f"✅ Found exact match for '{player_name}': {len(exact_response.data)} records")
+            return exact_response.data
+
+        # If no exact match, try pattern matching
+        query = supabase.table("player_stats").select("*").ilike("name", f"%{player_name}%")
+
         if league_id:
             query = query.eq("league_id", league_id)
 
-        response = query.order("game_date", desc=True).limit(5).execute()
+        # Order by game_date descending to get most recent games first
+        query = query.order("game_date", desc=True).limit(limit)
 
-        if getattr(response, "error", None):
-            print(f"❌ Supabase fetch error: {response.error}")
-            continue
+        response = query.execute()
 
+        # Filter results to find the best match (prefer exact name without position)
         if response.data:
-            print(f"✅ Supabase returned {len(response.data)} records for '{player_name}' using pattern '{search_pattern}'")
+            # First, look for exact name match (ignoring position indicators)
+            base_name = player_name.split('(')[0].strip() if '(' in player_name else player_name
+            exact_matches = [r for r in response.data if r.get('name', '').split('(')[0].strip().lower() == base_name.lower()]
+
+            if exact_matches:
+                print(f"✅ Found {len(exact_matches)} exact name matches for '{player_name}'")
+                return exact_matches
+
+            print(f"✅ Supabase returned {len(response.data)} fuzzy matches for '{player_name}' using pattern '%{player_name}%'")
             return response.data
-    
-    print(f"❌ No records found for '{player_name}' in any search pattern")
-    return []
+        else:
+            print(f"❌ No records found for '{player_name}'")
+            return []
+
+    except Exception as e:
+        print(f"❌ Error fetching player records: {e}")
+        return []
