@@ -197,15 +197,41 @@ async def get_player_stats(
 
     global last_player_name
 
-    # Handle empty string as signal to use last mentioned player
+    # Only use cached player name if explicitly empty string or None AND no player name in user message
     if player_name == "":
         player_name = last_player_name
     elif not player_name:
-        player_name = last_player_name
+        # Try to extract player name from user message before using cached name
+        if user_message:
+            # Look for common name patterns in the message
+            import re
+            # Match patterns like "How is [Player Name] doing?" or "[Player Name]'s stats"
+            name_patterns = [
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s*(?:'s|is|has|scored|shooting)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s+(?:doing|performing|stats)"
+            ]
+            
+            for pattern in name_patterns:
+                match = re.search(pattern, user_message, re.IGNORECASE)
+                if match:
+                    extracted_name = match.group(1).strip()
+                    print(f"🎯 Extracted player name from message: '{extracted_name}'")
+                    player_name = extracted_name
+                    break
+            
+            # If no name found in message, use cached name
+            if not player_name:
+                player_name = last_player_name
+        else:
+            player_name = last_player_name
 
     # Update last player name if we have a valid one
     if player_name:
         last_player_name = player_name
+
+    print(f"🔍 Final player_name being used: '{player_name}'")
+    print(f"📝 Original user_message: '{user_message}'")
 
     # Infer mode from natural language if not provided
     if not mode and user_message:
@@ -221,8 +247,8 @@ async def get_player_stats(
             mode = "average"  # Default to average instead of latest
         print(f"🎯 Selected mode: {mode}")
 
-        if not player_name:
-            return "⚠️ No player name provided."
+    if not player_name:
+        return "⚠️ No player name provided."
 
 
     # ⛏ Fetch from Supabase
