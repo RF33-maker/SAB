@@ -197,16 +197,13 @@ async def get_player_stats(
 
     global last_player_name
 
-    # Only use cached player name if explicitly empty string or None AND no player name in user message
-    if player_name == "":
-        player_name = last_player_name
-    elif not player_name:
-        # Try to extract player name from user message before using cached name
+    # Clear logic for player name resolution
+    if player_name is None or player_name == "":
+        # No player name provided - try to extract from message or use cached
         if user_message:
-            # Look for common name patterns in the message
+            # Try to extract player name from user message
             import re
             # Match patterns like "How is [Player Name] doing?" or "[Player Name]'s stats"
-            # Updated patterns to better handle position indicators
             name_patterns = [
                 r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)",
                 r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]+\))?)\s*(?:'s|is|has|scored|shooting)",
@@ -226,10 +223,14 @@ async def get_player_stats(
             if not player_name:
                 player_name = last_player_name
         else:
+            # No message, use cached name
             player_name = last_player_name
+    else:
+        # Player name was explicitly provided - use it as-is
+        print(f"🎯 Using explicitly provided player name: '{player_name}'")
 
-    # Update last player name if we have a valid one
-    if player_name:
+    # Update last player name cache if we have a valid one
+    if player_name and player_name.strip():
         last_player_name = player_name
 
     print(f"🔍 Final player_name being used: '{player_name}'")
