@@ -251,9 +251,10 @@ async def get_player_stats(
         return "⚠️ No player name provided."
 
 
-    # ⛏ Fetch from Supabase
+    # ⛏ Fetch from Supabase with league_id
+    print(f"🔍 Fetching records for player: '{player_name}' in league: '{league_id}'")
     records = fetch_player_records(player_name, league_id=league_id)
-    print(f"📦 Records retrieved for {player_name} (league: {league_id}):", records)
+    print(f"📦 Records retrieved for {player_name} (league: {league_id}): {len(records) if records else 0} records found")
 
     if not records:
         # Fallback to players table for basic info

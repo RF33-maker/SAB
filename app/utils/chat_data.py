@@ -28,7 +28,10 @@ def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = 
 
         # Add league_id filter if provided
         if league_id:
+            print(f"🎯 Adding league_id filter: {league_id}")
             query = query.eq("league_id", league_id)
+        else:
+            print("⚠️ No league_id provided for filtering")
 
         response = query.order("game_date", desc=True).limit(5).execute()
 
@@ -37,8 +40,10 @@ def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = 
             continue
 
         if response.data:
-            print(f"✅ Supabase returned {len(response.data)} records for '{player_name}' using pattern '{search_pattern}'")
+            print(f"✅ Supabase returned {len(response.data)} records for '{player_name}' using pattern '{search_pattern}' with league_id '{league_id}'")
             return response.data
+        else:
+            print(f"🔍 No records found for pattern '{search_pattern}' with league_id '{league_id}'")
     
     print(f"❌ No records found for '{player_name}' in any search pattern")
     return []

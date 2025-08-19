@@ -234,34 +234,42 @@ def chat_league():
             tool_name = tool_call.function.name
             args = json.loads(tool_call.function.arguments)
 
-            # Add league_id to args if not present
-            if 'league_id' not in args:
-                args['league_id'] = league_id
+            # Ensure league_id is always passed to tools that support it
+            args['league_id'] = league_id
+            
+            logging.warning(f"🔧 Tool call: {tool_name} with args: {args}")
 
-            if tool_name == "get_player_stats":
-                response = asyncio.run(get_player_stats(**args))
-                if isinstance(response, tuple):
-                    raw_output, records = response
-                    store_player_data(thread_id, args.get("player_name"), records)
-                else:
-                    raw_output = response
+            try:
+                if tool_name == "get_player_stats":
+                    response = asyncio.run(get_player_stats(**args))
+                    if isinstance(response, tuple):
+                        raw_output, records = response
+                        store_player_data(thread_id, args.get("player_name"), records)
+                    else:
+                        raw_output = response
+                        
+                elif tool_name == "get_top_players":
+                    raw_output = asyncio.run(get_top_players(**args))
                     
-            elif tool_name == "get_top_players":
-                raw_output = asyncio.run(get_top_players(**args))
+                elif tool_name == "get_game_summary":
+                    raw_output = asyncio.run(get_game_summary(**args))
+                    
+                elif tool_name == "get_team_analysis":
+                    raw_output = asyncio.run(get_team_analysis(**args))
+                    
+                elif tool_name == "get_player_trending":
+                    raw_output = asyncio.run(get_player_trending(**args))
+                    
+                elif tool_name == "get_advanced_insights":
+                    raw_output = asyncio.run(get_advanced_insights(**args))
+                else:
+                    raw_output = "Tool not recognized"
+                    
+                logging.warning(f"✅ Tool {tool_name} returned: {raw_output[:200]}...")
                 
-            elif tool_name == "get_game_summary":
-                raw_output = asyncio.run(get_game_summary(**args))
-                
-            elif tool_name == "get_team_analysis":
-                raw_output = asyncio.run(get_team_analysis(**args))
-                
-            elif tool_name == "get_player_trending":
-                raw_output = asyncio.run(get_player_trending(**args))
-                
-            elif tool_name == "get_advanced_insights":
-                raw_output = asyncio.run(get_advanced_insights(**args))
-            else:
-                raw_output = "Tool not recognized"
+            except Exception as tool_error:
+                logging.error(f"❌ Tool {tool_name} failed: {tool_error}")
+                raw_output = f"Error executing {tool_name}: {str(tool_error)}"
 
             # Submit tool output and wait for completion
             run = client.beta.threads.runs.submit_tool_outputs_and_poll(
