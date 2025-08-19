@@ -45,5 +45,16 @@ def fetch_player_records(player_name: Optional[str], league_id: Optional[str] = 
         else:
             print(f"🔍 No records found for pattern '{search_pattern}' with league_id '{league_id}'")
     
+    # If league_id was provided but no results found, try without league filter as fallback
+    if league_id:
+        print(f"🔄 No results with league_id '{league_id}', trying without league filter as fallback...")
+        for search_pattern in queries_to_try:
+            query = supabase.table("player_stats").select("*").ilike("name", search_pattern)
+            response = query.order("game_date", desc=True).limit(5).execute()
+
+            if not getattr(response, "error", None) and response.data:
+                print(f"✅ Fallback search returned {len(response.data)} records for '{player_name}' using pattern '{search_pattern}' without league filter")
+                return response.data
+    
     print(f"❌ No records found for '{player_name}' in any search pattern")
     return []

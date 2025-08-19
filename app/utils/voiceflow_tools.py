@@ -207,9 +207,11 @@ async def get_player_stats(
             import re
             # Match patterns like "How is [Player Name] doing?" or "[Player Name]'s stats"
             name_patterns = [
-                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s*(?:'s|is|has|scored|shooting)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([A-Z]\))?)\s+(?:doing|performing|stats)"
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([A-Z]\))?)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([A-Z]\))?)\s*(?:'s|is|has|scored|shooting)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([A-Z]\))?)\s+(?:doing|performing|stats)",
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(?:doing|performing|playing)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(?:performing|doing|playing)"
             ]
             
             for pattern in name_patterns:

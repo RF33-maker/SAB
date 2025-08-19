@@ -214,6 +214,9 @@ def chat_league():
             return jsonify({"error": "league_id is required"}), 400
 
         logging.warning(f"📦 League chat request: {data}")
+        logging.warning(f"🎯 User input: '{user_input}'")
+        logging.warning(f"🏀 League ID: '{league_id}'")
+        logging.warning(f"👤 Player name: '{player_name}'")
 
         # Submit user message to thread
         client.beta.threads.messages.create(
