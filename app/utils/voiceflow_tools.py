@@ -182,6 +182,15 @@ def analyze_trending(player_name: str, records: List[dict]) -> str:
 
     return f"{trend_emoji} {player_name} is {trend_direction}: {changes_text}"
 
+def normalize_player_name(name: str) -> str:
+    """Remove brackets and contents (like captain designations) from player names"""
+    if not name:
+        return ""
+    import re
+    # Remove anything in brackets: (C), (Captain), etc.
+    cleaned_name = re.sub(r'\s*\([^)]*\)\s*', '', name).strip()
+    return cleaned_name
+
 def normalize_stat(raw: str) -> str:
     if not raw:
         return ""
@@ -213,12 +222,13 @@ async def get_player_stats(
             # Look for common name patterns in the message
             import re
             # Match patterns like "How is [Player Name] doing?" or "[Player Name]'s stats"
+            # Updated to handle captain designations like (C)
             name_patterns = [
-                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([A-Z]\))?)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([A-Z]\))?)\s*(?:'s|is|has|scored|shooting)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([A-Z]\))?)\s+(?:doing|performing|stats)",
-                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(?:doing|performing|playing)",
-                r"([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(?:performing|doing|playing)"
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([^)]*\))?)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([^)]*\))?)\s*(?:'s|is|has|scored|shooting)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*\([^)]*\))?)\s+(?:doing|performing|stats)",
+                r"(?:How is|What about|Tell me about|Show me)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([^)]*\))?)\s+(?:doing|performing|playing)",
+                r"([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*\([^)]*\))?)\s+(?:performing|doing|playing)"
             ]
 
             for pattern in name_patterns:
@@ -234,6 +244,13 @@ async def get_player_stats(
                 player_name = last_player_name
         else:
             player_name = last_player_name
+
+    # Normalize player name to remove captain designations like (C)
+    if player_name:
+        original_player_name = player_name
+        player_name = normalize_player_name(player_name)
+        if original_player_name != player_name:
+            logging.info(f"🧹 Normalized player name: '{original_player_name}' -> '{player_name}'")
 
     # Update last player name if we have a valid one
     if player_name and player_name.strip() and player_name.lower() != "none":
