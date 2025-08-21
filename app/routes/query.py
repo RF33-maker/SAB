@@ -287,13 +287,18 @@ def chat_league():
             # Get the assistant's final response
             if run.status == "completed":
                 messages = client.beta.threads.messages.list(thread_id=thread_id)
-                if messages.data and messages.data[0].role == "assistant":
-                    assistant_response = messages.data[0].content[0].text.value
+                # Get the most recent assistant message
+                for message in messages.data:
+                    if message.role == "assistant":
+                        assistant_response = message.content[0].text.value
+                        break
                 else:
+                    # No assistant message found, use tool output
                     assistant_response = str(raw_output)
             else:
                 # If run didn't complete properly, return the raw tool output
                 assistant_response = str(raw_output)
+                logging.warning(f"⚠️ Run status: {run.status}, returning raw output")
             
             return jsonify({
                 "response": assistant_response,
