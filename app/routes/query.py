@@ -285,8 +285,15 @@ def chat_league():
             )
 
             # Get the assistant's final response
-            messages = client.beta.threads.messages.list(thread_id=thread_id)
-            assistant_response = messages.data[0].content[0].text.value if messages.data else str(raw_output)
+            if run.status == "completed":
+                messages = client.beta.threads.messages.list(thread_id=thread_id)
+                if messages.data and messages.data[0].role == "assistant":
+                    assistant_response = messages.data[0].content[0].text.value
+                else:
+                    assistant_response = str(raw_output)
+            else:
+                # If run didn't complete properly, return the raw tool output
+                assistant_response = str(raw_output)
             
             return jsonify({
                 "response": assistant_response,
