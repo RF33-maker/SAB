@@ -204,14 +204,14 @@ def chat_league():
         league_id = data.get('league_id')
         player_name = data.get('player_name')
         
+        if not league_id:
+            return jsonify({"error": "league_id is required"}), 400
+            
         # If no thread_id provided, create a new thread
         if not thread_id:
             thread = client.beta.threads.create()
             thread_id = thread.id
             logging.warning(f"🆕 Created new thread: {thread_id}")
-
-        if not league_id:
-            return jsonify({"error": "league_id is required"}), 400
 
         logging.warning(f"📦 League chat request: {data}")
         logging.warning(f"🎯 User input: '{user_input}'")
@@ -231,7 +231,7 @@ def chat_league():
             assistant_id=assistant_id
         )
 
-        # Handle tool calls (same logic as /chat route)
+        # Handle tool calls
         if run.status == "requires_action" and run.required_action:
             tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
             tool_name = tool_call.function.name
@@ -268,7 +268,7 @@ def chat_league():
                 else:
                     raw_output = "Tool not recognized"
                     
-                logging.warning(f"✅ Tool {tool_name} returned: {raw_output[:200]}...")
+                logging.warning(f"✅ Tool {tool_name} returned: {len(str(raw_output))} characters")
                 
             except Exception as tool_error:
                 logging.error(f"❌ Tool {tool_name} failed: {tool_error}")
@@ -284,29 +284,27 @@ def chat_league():
                 }]
             )
 
-            # Get the assistant's final response
-            if run.status == "completed":
-                messages = client.beta.threads.messages.list(thread_id=thread_id)
-                # Get the most recent assistant message
-                for message in messages.data:
-                    if message.role == "assistant":
-                        assistant_response = message.content[0].text.value
-                        break
-                else:
-                    # No assistant message found, use tool output
-                    assistant_response = str(raw_output)
-            else:
-                # If run didn't complete properly, return the raw tool output
-                assistant_response = str(raw_output)
-                logging.warning(f"⚠️ Run status: {run.status}, returning raw output")
+        # Always get the latest assistant message after run completes
+        if run.status == "completed":
+            messages = client.beta.threads.messages.list(thread_id=thread_id)
+            # Get the most recent assistant message
+            assistant_response = None
+            for message in messages.data:
+                if message.role == "assistant":
+                    assistant_response = message.content[0].text.value
+                    break
+            
+            if not assistant_response:
+                assistant_response = "I apologize, but I couldn't process your request properly. Please try again."
             
             return jsonify({
                 "response": assistant_response,
                 "thread_id": thread_id,
                 "league_id": league_id
             })
-
-        return jsonify({"error": "❌ No tool call triggered."}), 400
+        else:
+            logging.error(f"❌ Run failed with status: {run.status}")
+            return jsonify({"error": f"Request failed with status: {run.status}"}), 500
 
     except Exception as e:
         logging.error("❌ Error in /api/chat/league route:", exc_info=True)
