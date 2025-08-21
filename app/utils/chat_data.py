@@ -24,22 +24,7 @@ def fetch_player_records(player_name: str, league_id: Optional[str] = None, limi
         # Normalize the search name to remove brackets
         normalized_name = normalize_player_name(player_name)
 
-        # First try exact match (case-insensitive)
-        query = supabase.table("player_stats").select("*").ilike("name", normalized_name)
-
-        if league_id:
-            print(f"🎯 Adding league_id filter: {league_id}")
-            query = query.eq("league_id", league_id)
-
-        response = query.order("game_date", desc=True).limit(limit).execute()
-
-        if response.data:
-            print(f"✅ Supabase returned {len(response.data)} records for '{player_name}' using pattern '{normalized_name}' with league_id '{league_id}'")
-            return response.data
-        else:
-            print(f"🔍 No records found for pattern '{normalized_name}' with league_id '{league_id}'")
-
-        # If no exact match, try wildcard search with normalized name
+        # Use wildcard search with normalized name from the start
         wildcard_pattern = f"%{normalized_name}%"
         query = supabase.table("player_stats").select("*").ilike("name", wildcard_pattern)
 
