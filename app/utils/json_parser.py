@@ -220,7 +220,6 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     # --- Insert game schedule row ---
     game_record = {
-        "id": numeric_id,
         "competitionname": league_name,
         "matchtime": game_date,
         "hometeam": home_team_name,
@@ -231,7 +230,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         "home_team_id": home_team_id,
         "away_team_id": away_team_id
     }
-    supabase.table("game_schedule").upsert(game_record, on_conflict="id").execute()
+    supabase.table("game_schedule").upsert(game_record, on_conflict="game_key").execute()
 
     teams = data.get("tm", {})
 
