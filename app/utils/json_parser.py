@@ -142,7 +142,7 @@ PBP_FIELD_MAP = {
 def build_data_url(numeric_id: str) -> str:
     return f"https://fibalivestats.dcd.shared.geniussports.com/data/{numeric_id}/data.json"
 
-def insert_supabase(table: str, records: list, conflict_keys: list):
+def insert_supabase(table: str, records: list, conflict_keys: str):
     if not records:
         return
     try:
@@ -152,37 +152,6 @@ def insert_supabase(table: str, records: list, conflict_keys: list):
         print(f"✅ Upserted {len(records)} into {table}")
     except Exception as e:
         print(f"❌ Supabase upsert failed for {table}: {e}")
-
-def get_or_create_player(firstname, familyname, team_name, shirtNumber=None):
-    full_name = f"{firstname} {familyname}".strip()
-    alias = f"{firstname[0]} {familyname}".strip() if firstname else familyname
-
-    try:
-        # 1. Try to find the player
-        existing = supabase.table("players") \
-            .select("id") \
-            .eq("full_name", full_name) \
-            .eq("team_name", team_name) \
-            .execute()
-
-        if existing.data:
-            return existing.data[0]["id"]
-
-        # 2. Insert new player with jersey number
-        insert = supabase.table("players").insert({
-            "firstname": firstname,
-            "familyname": familyname,
-            "full_name": full_name,
-            "team_name": team_name,
-            "shirtNumber": shirtNumber,
-            "aliases": [alias]
-        }).execute()
-
-        return insert.data[0]["id"]
-
-    except Exception as e:
-        print(f"❌ Failed to get_or_create_player {full_name}: {e}")
-        return None
 
 # ----------------------------
 # Entity Get-or-Create
@@ -274,7 +243,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             team_record[db_key] = team.get(json_key)
         team_records.append(team_record)
 
-    insert_supabase("team_stats", team_records, conflict_keys=["identifier_duplicate"])
+    insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")
 
     # --- Insert player stats ---
     player_records = []
@@ -296,7 +265,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 player_record[db_key] = player.get(json_key)
             player_records.append(player_record)
 
-    insert_supabase("player_stats", player_records, conflict_keys=["identifier_duplicate"])
+    insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
 
     # --- Insert shots ---
     shots = data.get("shot", [])
@@ -315,7 +284,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             shot_record[db_key] = s.get(json_key)
         shot_records.append(shot_record)
 
-    insert_supabase("shots", shot_records, conflict_keys=["identifier_duplicate"])
+    insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
 
     # --- Insert play-by-play ---
     pbp = data.get("pbp", [])
@@ -326,7 +295,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             team_id = get_or_create_team(league_id, e.get("tm"))
 
         player_id = None
-        if e.get("pn"):
+        if e.get("pn") and team_id:
             player_id = get_or_create_player(e.get("pn"), team_id)
 
         pbp_record = {
@@ -342,7 +311,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     # Deduplicate before insert
     unique_pbp = {rec["identifier_duplicate"]: rec for rec in pbp_records}
-    insert_supabase("play_by_play", list(unique_pbp.values()), conflict_keys=["identifier_duplicate"])
+    insert_supabase("play_by_play", list(unique_pbp.values()), conflict_keys="identifier_duplicate")
 
 # ----------------------------
 # Excel runner
@@ -377,20 +346,26 @@ def run_from_excel(path: str):
         if col not in df.columns:
             raise ValueError(f"❌ Excel file must have a column named '{col}'.")
 
-    for i, row in df.iterrows():
-        league_name = str(row["Competition Name"]) if pd.notna(row["Competition Name"]) else ""
+    for idx, row in df.iterrows():
+        def safe_str(val):
+            if pd.isna(val):
+                return ""
+            return str(val)
+        
+        league_name = safe_str(row["Competition Name"])
         game_date = row["Match Time"]
-        home_team_name = str(row["Home Team"]) if pd.notna(row["Home Team"]) else ""
-        away_team_name = str(row["Away Team"]) if pd.notna(row["Away Team"]) else ""
-        game_key = str(row["Game Key"]) if pd.notna(row["Game Key"]) else ""
-        url = str(row["LiveStats URL"]) if pd.notna(row["LiveStats URL"]) else ""
+        home_team_name = safe_str(row["Home Team"])
+        away_team_name = safe_str(row["Away Team"])
+        game_key = safe_str(row["Game Key"])
+        url = safe_str(row["LiveStats URL"])
 
         if not url or url == "nan":
             continue
 
         numeric_id = url.rstrip("/").split("/")[-1]
-
-        print(f"\n➡️  Row {i+1}: {url}")
+        
+        row_num = int(idx) + 1 if isinstance(idx, (int, float)) else idx
+        print(f"\n➡️  Row {row_num}: {url}")
         print(f"   🎯 Extracted numeric_id: {numeric_id}")
 
         parse_and_store_game(
