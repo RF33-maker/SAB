@@ -378,14 +378,14 @@ def run_from_excel(path: str):
             raise ValueError(f"❌ Excel file must have a column named '{col}'.")
 
     for i, row in df.iterrows():
-        league_name = row["Competition Name"]
+        league_name = str(row["Competition Name"]) if pd.notna(row["Competition Name"]) else ""
         game_date = row["Match Time"]
-        home_team_name = row["Home Team"]
-        away_team_name = row["Away Team"]
-        game_key = row["Game Key"]
-        url = row["LiveStats URL"]
+        home_team_name = str(row["Home Team"]) if pd.notna(row["Home Team"]) else ""
+        away_team_name = str(row["Away Team"]) if pd.notna(row["Away Team"]) else ""
+        game_key = str(row["Game Key"]) if pd.notna(row["Game Key"]) else ""
+        url = str(row["LiveStats URL"]) if pd.notna(row["LiveStats URL"]) else ""
 
-        if not url:
+        if not url or url == "nan":
             continue
 
         numeric_id = url.rstrip("/").split("/")[-1]
