@@ -191,7 +191,7 @@ def get_or_create_player(full_name: str, team_id: str, jersey_number=None, user_
 # Game Parser
 # ----------------------------
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, user_id: str = None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None):
     url = build_data_url(numeric_id)
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -221,8 +221,13 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # --- Insert game schedule row ---
     game_record = {
         "id": numeric_id,
-        "league_id": league_id,
+        "competitionname": league_name,
         "matchtime": game_date,
+        "hometeam": home_team_name,
+        "awayteam": away_team_name,
+        "game_key": game_key,
+        "LiveStats URL": livestats_url,
+        "league_id": league_id,
         "home_team_id": home_team_id,
         "away_team_id": away_team_id
     }
@@ -386,6 +391,8 @@ def run_from_excel(path: str, user_id: str = None):
             game_date=game_date,
             home_team_name=home_team_name,
             away_team_name=away_team_name,
+            game_key=game_key,
+            livestats_url=url,
             user_id=user_id
         )
 
