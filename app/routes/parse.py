@@ -37,9 +37,7 @@ def handle_parse():
         print(f"[📄] File path: {file_path}")
 
         try:
-            full_path = f"user-uploads/{file_path}"
-            print(f"[📦] Full Supabase path: {full_path}")
-            run_from_excel(full_path)
+            run_from_excel(file_path)
             print(f"✅ Successfully parsed Excel file: {file_path}")
             
             return jsonify({
