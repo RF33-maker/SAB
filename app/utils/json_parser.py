@@ -356,7 +356,16 @@ def run_from_excel(path: str, user_id: str = None):
             return str(val)
         
         league_name = safe_str(row["Competition Name"])
-        game_date = row["Match Time"]
+        
+        game_date_raw = row["Match Time"]
+        if pd.notna(game_date_raw):
+            if isinstance(game_date_raw, pd.Timestamp):
+                game_date = game_date_raw.strftime("%Y-%m-%d")
+            else:
+                game_date = str(game_date_raw)
+        else:
+            game_date = None
+            
         home_team_name = safe_str(row["Home Team"])
         away_team_name = safe_str(row["Away Team"])
         game_key = safe_str(row["Game Key"])
