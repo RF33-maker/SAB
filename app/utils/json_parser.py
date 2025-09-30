@@ -222,7 +222,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     game_record = {
         "id": numeric_id,
         "league_id": league_id,
-        "game_date": game_date,
+        "matchtime": game_date,
         "home_team_id": home_team_id,
         "away_team_id": away_team_id
     }
