@@ -156,39 +156,48 @@ def insert_supabase(table: str, records: list, conflict_keys: str):
 # ----------------------------
 # Entity Get-or-Create
 # ----------------------------
-def get_or_create_league(name: str):
+def get_or_create_league(name: str, user_id: str = None):
     res = supabase.table("leagues").select("league_id").eq("name", name).execute()
     if res.data:
         return res.data[0]["league_id"]
-    new = supabase.table("leagues").insert({"name": name}).execute()
+    insert_data = {"name": name}
+    if user_id:
+        insert_data["created_by"] = user_id
+    new = supabase.table("leagues").insert(insert_data).execute()
     return new.data[0]["league_id"]
 
-def get_or_create_team(league_id: str, name: str):
+def get_or_create_team(league_id: str, name: str, user_id: str = None):
     res = supabase.table("teams").select("team_id").eq("league_id", league_id).eq("name", name).execute()
     if res.data:
         return res.data[0]["team_id"]
-    new = supabase.table("teams").insert({"league_id": league_id, "name": name}).execute()
+    insert_data = {"league_id": league_id, "name": name}
+    if user_id:
+        insert_data["created_by"] = user_id
+    new = supabase.table("teams").insert(insert_data).execute()
     return new.data[0]["team_id"]
 
-def get_or_create_player(full_name: str, team_id: str, jersey_number=None):
+def get_or_create_player(full_name: str, team_id: str, jersey_number=None, user_id: str = None):
     query = supabase.table("players").select("id").eq("full_name", full_name).eq("team_id", team_id)
     if jersey_number:
         query = query.eq("jersey_number", jersey_number)
     res = query.execute()
     if res.data:
         return res.data[0]["id"]
-    new = supabase.table("players").insert({
+    insert_data = {
         "full_name": full_name,
         "team_id": team_id,
         "jersey_number": jersey_number
-    }).execute()
+    }
+    if user_id:
+        insert_data["created_by"] = user_id
+    new = supabase.table("players").insert(insert_data).execute()
     return new.data[0]["id"]
 
 # ----------------------------
 # Game Parser
 # ----------------------------
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, user_id: str = None):
     url = build_data_url(numeric_id)
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -203,15 +212,15 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     print(f"🔍 Processing game {numeric_id}")
 
     # --- Ensure league ---
-    league_id = get_or_create_league(league_name)
+    league_id = get_or_create_league(league_name, user_id)
 
     # --- Ensure teams ---
     if home_team_name:
-        home_team_id = get_or_create_team(league_id, home_team_name)
+        home_team_id = get_or_create_team(league_id, home_team_name, user_id)
     else:
         home_team_id = None
     if away_team_name:
-        away_team_id = get_or_create_team(league_id, away_team_name)
+        away_team_id = get_or_create_team(league_id, away_team_name, user_id)
     else:
         away_team_id = None
 
@@ -230,7 +239,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # --- Insert team stats ---
     team_records = []
     for side, team in teams.items():
-        team_id = get_or_create_team(league_id, team.get("name"))
+        team_id = get_or_create_team(league_id, team.get("name"), user_id)
 
         team_record = {
             "numeric_id": numeric_id,
@@ -248,10 +257,10 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # --- Insert player stats ---
     player_records = []
     for side, team in teams.items():
-        team_id = get_or_create_team(league_id, team.get("name"))
+        team_id = get_or_create_team(league_id, team.get("name"), user_id)
         for pid, player in team.get("pl", {}).items():
             full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
-            player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"))
+            player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), user_id)
 
             player_record = {
                 "numeric_id": numeric_id,
@@ -271,8 +280,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     shots = data.get("shot", [])
     shot_records = []
     for s in shots:
-        team_id = get_or_create_team(league_id, teams.get(s.get("tno"), {}).get("name", "Unknown"))
-        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtnumber"))
+        team_id = get_or_create_team(league_id, teams.get(s.get("tno"), {}).get("name", "Unknown"), user_id)
+        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtnumber"), user_id)
         shot_record = {
             "numeric_id": numeric_id,
             "game_id": numeric_id,
@@ -292,11 +301,11 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     for e in pbp:
         team_id = None
         if e.get("tm"):
-            team_id = get_or_create_team(league_id, e.get("tm"))
+            team_id = get_or_create_team(league_id, e.get("tm"), user_id)
 
         player_id = None
         if e.get("pn") and team_id:
-            player_id = get_or_create_player(e.get("pn"), team_id)
+            player_id = get_or_create_player(e.get("pn"), team_id, None, user_id)
 
         pbp_record = {
             "numeric_id": numeric_id,
@@ -316,7 +325,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 # ----------------------------
 # Excel runner
 # ----------------------------
-def run_from_excel(path: str):
+def run_from_excel(path: str, user_id: str = None):
     print("🚀 json_parser starting...")
 
     # Check if this is a Supabase Storage file path
@@ -373,7 +382,8 @@ def run_from_excel(path: str):
             league_name=league_name,
             game_date=game_date,
             home_team_name=home_team_name,
-            away_team_name=away_team_name
+            away_team_name=away_team_name,
+            user_id=user_id
         )
 
     print("✅ Finished parsing")

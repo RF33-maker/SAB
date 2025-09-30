@@ -37,7 +37,7 @@ def handle_parse():
         print(f"[📄] File path: {file_path}")
 
         try:
-            run_from_excel(file_path)
+            run_from_excel(file_path, user_id)
             print(f"✅ Successfully parsed Excel file: {file_path}")
             
             return jsonify({
