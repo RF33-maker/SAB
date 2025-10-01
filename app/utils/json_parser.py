@@ -283,7 +283,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     shot_records = []
     for s in shots:
         team_id = get_or_create_team(league_id, teams.get(s.get("tno"), {}).get("name", "Unknown"), user_id)
-        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtnumber"), user_id)
+        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtNumber"), user_id)
         shot_record = {
             "numeric_id": numeric_id,
             "game_id": numeric_id,
