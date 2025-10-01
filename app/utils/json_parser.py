@@ -191,7 +191,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, user_id
 # Game Parser
 # ----------------------------
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, pool=None, user_id: str = None):
     url = build_data_url(numeric_id)
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -228,7 +228,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         "LiveStats URL": livestats_url,
         "league_id": league_id,
         "home_team_id": home_team_id,
-        "away_team_id": away_team_id
+        "away_team_id": away_team_id,
+        "pool": pool
     }
     supabase.table("game_schedule").upsert(game_record, on_conflict="game_key").execute()
 
