@@ -242,8 +242,9 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         team_record = {
             "numeric_id": numeric_id,
             "side": side,
-            "game_id": numeric_id,
+            "game_key": game_key,
             "team_id": team_id,
+            "league_id": league_id,
             "identifier_duplicate": f"{numeric_id}_{team_id}_{side}"
         }
         for json_key, db_key in TEAM_FIELD_MAP.items():
@@ -263,9 +264,12 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             player_record = {
                 "numeric_id": numeric_id,
                 "side": side,
-                "game_id": numeric_id,
+                "game_key": game_key,
                 "team_id": team_id,
                 "player_id": player_id,
+                "full_name": full_name,
+                "team_name": team.get("name"),
+                "league_id": league_id,
                 "identifier_duplicate": f"{numeric_id}_{player_id}"
             }
             for json_key, db_key in PLAYER_FIELD_MAP.items():
