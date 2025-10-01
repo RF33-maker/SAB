@@ -44,6 +44,7 @@ Preferred communication style: Simple, everyday language.
 - **Technology**: Pandas for structured data processing
 - **Process**: Field mapping system translates various column naming conventions to standardized schema
 - **Normalization**: Handles case-insensitive field matching and multiple naming variants
+- **Pool Support**: Optional "Pool" column for leagues with multiple pools (e.g., NBL Division 1). Automatically detected and stored in game_schedule when present; gracefully skipped for leagues without pools
 
 **Data Validation**: Player name normalization removes captain designations (C) and handles bracket variations for consistent database queries
 
