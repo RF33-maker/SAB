@@ -378,6 +378,12 @@ def run_from_excel(path: str, user_id: str = None):
         away_team_name = safe_str(row["Away Team"])
         game_key = safe_str(row["Game Key"])
         url = safe_str(row["LiveStats URL"])
+        
+        # Optional: Pool column (for leagues with multiple pools like NBL Division 1)
+        pool = None
+        if "Pool" in df.columns:
+            pool_val = safe_str(row["Pool"])
+            pool = pool_val if pool_val and pool_val != "nan" else None
 
         if not url or url == "nan":
             continue
@@ -396,6 +402,7 @@ def run_from_excel(path: str, user_id: str = None):
             away_team_name=away_team_name,
             game_key=game_key,
             livestats_url=url,
+            pool=pool,
             user_id=user_id
         )
 
