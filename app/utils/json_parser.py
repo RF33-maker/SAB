@@ -176,14 +176,14 @@ def get_or_create_team(league_id: str, name: str, user_id: str = None):
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, user_id: str = None):
     query = supabase.table("players").select("id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
-        query = query.eq("shirtNumber", shirtnumber)
+        query = query.eq("shirtnumber", shirtnumber)
     res = query.execute()
     if res.data:
         return res.data[0]["id"]
     new = supabase.table("players").insert({
         "full_name": full_name,
         "team_id": team_id,
-        "shirtNumber": shirtnumber
+        "shirtnumber": shirtnumber
     }).execute()
     return new.data[0]["id"]
 
@@ -191,7 +191,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, user_id
 # Game Parser
 # ----------------------------
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None):
     url = build_data_url(numeric_id)
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -230,9 +230,6 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         "home_team_id": home_team_id,
         "away_team_id": away_team_id
     }
-    # Add pool if present (for leagues with pools like NBL Division 1)
-    if pool is not None:
-        game_record["pool"] = pool
     supabase.table("game_schedule").upsert(game_record, on_conflict="game_key").execute()
 
     teams = data.get("tm", {})
@@ -381,12 +378,6 @@ def run_from_excel(path: str, user_id: str = None):
         away_team_name = safe_str(row["Away Team"])
         game_key = safe_str(row["Game Key"])
         url = safe_str(row["LiveStats URL"])
-        
-        # Optional: Pool column (for leagues with multiple pools like NBL Division 1)
-        pool = None
-        if "Pool" in df.columns:
-            pool_val = safe_str(row["Pool"])
-            pool = pool_val if pool_val and pool_val != "nan" else None
 
         if not url or url == "nan":
             continue
@@ -405,7 +396,6 @@ def run_from_excel(path: str, user_id: str = None):
             away_team_name=away_team_name,
             game_key=game_key,
             livestats_url=url,
-            pool=pool,
             user_id=user_id
         )
 
