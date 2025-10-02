@@ -174,13 +174,31 @@ def get_or_create_team(league_id: str, name: str, user_id: str = None):
     return new.data[0]["team_id"]
 
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
-    query = supabase.table("players").select("id").eq("full_name", full_name).eq("team_id", team_id)
+    query = supabase.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
         query = query.eq("shirtNumber", shirtnumber)
     res = query.execute()
-    if res.data:
-        return res.data[0]["id"]
     
+    if res.data:
+        player_id = res.data[0]["id"]
+        existing_team_name = res.data[0].get("team_name")
+        existing_league_id = res.data[0].get("league_id")
+        
+        # Update NULL fields if we have new data
+        update_data = {}
+        if not existing_team_name and team_name:
+            update_data["team_name"] = team_name
+        if not existing_league_id and league_id:
+            update_data["league_id"] = league_id
+        
+        # If there are fields to update, do it
+        if update_data:
+            supabase.table("players").update(update_data).eq("id", player_id).execute()
+            print(f"✅ Updated player {full_name} with missing fields: {list(update_data.keys())}")
+        
+        return player_id
+    
+    # Create new player with all available data
     insert_data = {
         "full_name": full_name,
         "team_id": team_id,
