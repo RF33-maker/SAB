@@ -154,6 +154,76 @@ def insert_supabase(table: str, records: list, conflict_keys: str):
         print(f"❌ Supabase upsert failed for {table}: {e}")
 
 # ----------------------------
+# Team Name Normalization
+# ----------------------------
+TEAM_ALIASES = {
+    "MK Breakers": "Milton Keynes Breakers",
+    "MK Lions": "Milton Keynes Lions",
+    "MKB": "Milton Keynes Breakers",
+}
+
+def normalize_team_name(name: str) -> str:
+    if not name:
+        return name
+    
+    normalized = name.strip()
+    
+    if normalized in TEAM_ALIASES:
+        normalized = TEAM_ALIASES[normalized]
+    
+    import re
+    normalized = re.sub(r'\s*\([MmWw]\)\s*$', '', normalized)
+    normalized = re.sub(r'\s*\(Men\)\s*$', '', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'\s*\(Women\)\s*$', '', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'\s*\(Male\)\s*$', '', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'\s*\(Female\)\s*$', '', normalized, flags=re.IGNORECASE)
+    
+    normalized = ' '.join(normalized.split())
+    
+    return normalized
+
+# ----------------------------
+# Player Name Normalization & Fuzzy Matching
+# ----------------------------
+def normalize_player_name(name: str) -> str:
+    if not name:
+        return name
+    
+    import re
+    normalized = name.strip()
+    
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    return normalized
+
+def find_similar_player(full_name: str, team_id: str, similarity_threshold: float = 0.85):
+    from difflib import SequenceMatcher
+    
+    normalized_search = normalize_player_name(full_name)
+    
+    result = supabase.table("players").select("id, full_name, shirtNumber").eq("team_id", team_id).execute()
+    
+    if not result.data:
+        return None
+    
+    best_match = None
+    best_score = 0.0
+    
+    for player in result.data:
+        existing_name = normalize_player_name(player["full_name"])
+        
+        similarity = SequenceMatcher(None, normalized_search.lower(), existing_name.lower()).ratio()
+        
+        if similarity > best_score and similarity >= similarity_threshold:
+            best_score = similarity
+            best_match = player
+    
+    if best_match:
+        print(f"🔍 Fuzzy match found: '{full_name}' → '{best_match['full_name']}' (score: {best_score:.2f})")
+    
+    return best_match
+
+# ----------------------------
 # Entity Get-or-Create
 # ----------------------------
 def get_or_create_league(name: str, user_id: str = None):
@@ -167,10 +237,11 @@ def get_or_create_league(name: str, user_id: str = None):
     return new.data[0]["league_id"]
 
 def get_or_create_team(league_id: str, name: str, user_id: str = None):
-    res = supabase.table("teams").select("team_id").eq("league_id", league_id).eq("name", name).execute()
+    normalized_name = normalize_team_name(name)
+    res = supabase.table("teams").select("team_id").eq("league_id", league_id).eq("name", normalized_name).execute()
     if res.data:
         return res.data[0]["team_id"]
-    new = supabase.table("teams").insert({"league_id": league_id, "name": name}).execute()
+    new = supabase.table("teams").insert({"league_id": league_id, "name": normalized_name}).execute()
     return new.data[0]["team_id"]
 
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
@@ -184,21 +255,38 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
         existing_team_name = res.data[0].get("team_name")
         existing_league_id = res.data[0].get("league_id")
         
-        # Update NULL fields if we have new data
         update_data = {}
         if not existing_team_name and team_name:
             update_data["team_name"] = team_name
         if not existing_league_id and league_id:
             update_data["league_id"] = league_id
         
-        # If there are fields to update, do it
         if update_data:
             supabase.table("players").update(update_data).eq("id", player_id).execute()
             print(f"✅ Updated player {full_name} with missing fields: {list(update_data.keys())}")
         
         return player_id
     
-    # Create new player with all available data
+    similar_player = find_similar_player(full_name, team_id)
+    if similar_player:
+        player_id = similar_player["id"]
+        
+        update_data = {}
+        existing_result = supabase.table("players").select("team_name, league_id").eq("id", player_id).execute()
+        if existing_result.data:
+            existing_team_name = existing_result.data[0].get("team_name")
+            existing_league_id = existing_result.data[0].get("league_id")
+            
+            if not existing_team_name and team_name:
+                update_data["team_name"] = team_name
+            if not existing_league_id and league_id:
+                update_data["league_id"] = league_id
+            
+            if update_data:
+                supabase.table("players").update(update_data).eq("id", player_id).execute()
+        
+        return player_id
+    
     insert_data = {
         "full_name": full_name,
         "team_id": team_id,
