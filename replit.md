@@ -45,6 +45,7 @@ Preferred communication style: Simple, everyday language.
 - **Process**: Field mapping system translates various column naming conventions to standardized schema
 - **Normalization**: Handles case-insensitive field matching and multiple naming variants
 - **Pool Support**: Optional "Pool" column for leagues with multiple pools (e.g., NBL Division 1). Automatically detected and stored in game_schedule when present; gracefully skipped for leagues without pools
+- **Schedule-First Processing**: Games are added to game_schedule immediately from Excel data, then LiveStats data is fetched if available. This enables future/unplayed games to appear in schedules while stats are processed separately for completed games
 
 **Data Validation**: Player name normalization removes captain designations (C) and handles bracket variations for consistent database queries
 
