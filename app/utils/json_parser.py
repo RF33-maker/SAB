@@ -166,12 +166,12 @@ def normalize_team_name(name: str) -> str:
     if not name:
         return name
     
+    import re
     normalized = name.strip()
     
-    if normalized in TEAM_ALIASES:
-        normalized = TEAM_ALIASES[normalized]
+    normalized = re.sub(r'\s+1$', '', normalized)
+    normalized = re.sub(r'\s+I$', '', normalized)
     
-    import re
     normalized = re.sub(r'\s*\([MmWw]\)\s*$', '', normalized)
     normalized = re.sub(r'\s*\(Men\)\s*$', '', normalized, flags=re.IGNORECASE)
     normalized = re.sub(r'\s*\(Women\)\s*$', '', normalized, flags=re.IGNORECASE)
@@ -179,6 +179,9 @@ def normalize_team_name(name: str) -> str:
     normalized = re.sub(r'\s*\(Female\)\s*$', '', normalized, flags=re.IGNORECASE)
     
     normalized = ' '.join(normalized.split())
+    
+    if normalized in TEAM_ALIASES:
+        normalized = TEAM_ALIASES[normalized]
     
     return normalized
 
