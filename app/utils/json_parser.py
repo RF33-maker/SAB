@@ -269,9 +269,10 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     player_records = []
     for side, team in teams.items():
         team_id = get_or_create_team(league_id, team.get("name"), user_id)
+        team_name = team.get("name")
         for pid, player in team.get("pl", {}).items():
             full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
-            player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), user_id)
+            player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), team_name, league_id, user_id)
 
             player_record = {
                 "numeric_id": numeric_id,
@@ -294,8 +295,9 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     shots = data.get("shot", [])
     shot_records = []
     for s in shots:
-        team_id = get_or_create_team(league_id, teams.get(s.get("tno"), {}).get("name", "Unknown"), user_id)
-        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtNumber"), user_id)
+        team_name = teams.get(s.get("tno"), {}).get("name", "Unknown")
+        team_id = get_or_create_team(league_id, team_name, user_id)
+        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtNumber"), team_name, league_id, user_id)
         shot_record = {
             "numeric_id": numeric_id,
             "game_id": numeric_id,
@@ -314,12 +316,14 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     pbp_records = []
     for e in pbp:
         team_id = None
+        team_name = None
         if e.get("tm"):
-            team_id = get_or_create_team(league_id, e.get("tm"), user_id)
+            team_name = e.get("tm")
+            team_id = get_or_create_team(league_id, team_name, user_id)
 
         player_id = None
         if e.get("pn") and team_id:
-            player_id = get_or_create_player(e.get("pn"), team_id, None, user_id)
+            player_id = get_or_create_player(e.get("pn"), team_id, None, team_name, league_id, user_id)
 
         pbp_record = {
             "numeric_id": numeric_id,
