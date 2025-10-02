@@ -211,18 +211,40 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
     
     best_match = None
     best_score = 0.0
+    match_type = None
+    
+    search_parts = normalized_search.split()
     
     for player in result.data:
         existing_name = normalize_player_name(player["full_name"])
+        existing_parts = existing_name.split()
+        
+        if len(search_parts) >= 2 and len(existing_parts) >= 2:
+            search_last = search_parts[-1].lower()
+            existing_last = existing_parts[-1].lower()
+            search_first = search_parts[0].lower()
+            existing_first = existing_parts[0].lower()
+            
+            if search_last == existing_last:
+                if (len(search_first) == 1 and existing_first.startswith(search_first)) or \
+                   (len(existing_first) == 1 and search_first.startswith(existing_first)):
+                    best_match = player
+                    best_score = 1.0
+                    match_type = "initial"
+                    break
         
         similarity = SequenceMatcher(None, normalized_search.lower(), existing_name.lower()).ratio()
         
         if similarity > best_score and similarity >= similarity_threshold:
             best_score = similarity
             best_match = player
+            match_type = "fuzzy"
     
     if best_match:
-        print(f"🔍 Fuzzy match found: '{full_name}' → '{best_match['full_name']}' (score: {best_score:.2f})")
+        if match_type == "initial":
+            print(f"🔍 Initial match found: '{full_name}' → '{best_match['full_name']}'")
+        else:
+            print(f"🔍 Fuzzy match found: '{full_name}' → '{best_match['full_name']}' (score: {best_score:.2f})")
     
     return best_match
 
