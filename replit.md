@@ -49,6 +49,20 @@ Preferred communication style: Simple, everyday language.
 
 **Data Validation**: Player name normalization removes captain designations (C) and handles bracket variations for consistent database queries
 
+**Deduplication System** (Added October 2025):
+- **Team Normalization**: Handles team name variations and gender markers
+  - Alias mapping (e.g., "MK Breakers" → "Milton Keynes Breakers")
+  - Strips gender indicators: (M), (W), (Men), (Women), (Male), (Female)
+  - Applied transparently at lookup layer without changing parsers
+- **Player Fuzzy Matching**: Prevents duplicate player records
+  - Uses team_id constraint to safely match similar names within same team
+  - 85% similarity threshold using Python's difflib.SequenceMatcher
+  - Matches "W White" with "Will White", handles typos and abbreviations
+- **Cleanup Scripts**: Two maintenance scripts for merging existing duplicates
+  - `cleanup_duplicate_teams.py` - Consolidates team variations
+  - `cleanup_duplicate_players.py` - Merges player name variations
+  - Both update canonical records to normalized names and rewrite all foreign key references
+
 ### Data Storage
 
 **Database**: Supabase (PostgreSQL-based)
