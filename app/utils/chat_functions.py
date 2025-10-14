@@ -3,7 +3,6 @@
 import os
 import json
 import openai
-from app.utils.voiceflow_tools import get_player_stats
 
 player_cache = {}
 

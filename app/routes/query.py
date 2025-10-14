@@ -109,8 +109,10 @@ Be specific with numbers and stats. If the data doesn't contain the answer, say 
         # Get the assistant's response
         if run.status == "completed":
             messages = client.beta.threads.messages.list(thread_id=thread_id, limit=1)
-            if messages.data:
-                assistant_message = messages.data[0].content[0].text.value
+            if messages.data and messages.data[0].content:
+                content_block = messages.data[0].content[0]
+                # Safely extract text content
+                assistant_message = content_block.text.value if hasattr(content_block, 'text') else str(content_block)
                 
                 logging.info(f"✅ RAG response generated successfully")
                 
@@ -136,6 +138,9 @@ Be specific with numbers and stats. If the data doesn't contain the answer, say 
 def check_summary():
     try:
         data = request.json
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
         thread_id = data.get('thread_id')
 
         if not thread_id:
@@ -213,8 +218,10 @@ Be specific with numbers and stats. If the data doesn't contain the answer, say 
         # Get response
         if run.status == "completed":
             messages = client.beta.threads.messages.list(thread_id=thread_id, limit=1)
-            if messages.data:
-                assistant_message = messages.data[0].content[0].text.value
+            if messages.data and messages.data[0].content:
+                content_block = messages.data[0].content[0]
+                # Safely extract text content
+                assistant_message = content_block.text.value if hasattr(content_block, 'text') else str(content_block)
                 
                 logging.info(f"✅ League RAG response generated")
                 
