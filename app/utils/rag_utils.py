@@ -120,14 +120,8 @@ def build_player_context(player_name: str, league_id: Optional[str] = None) -> D
         context['recent_games'] = recent_games.data if recent_games.data else []
         
         # Fetch season averages
-        # Note: player_season_averages doesn't have league_id, so we rely on player name match
-        # If we have recent_games, we can filter by team_id instead
-        if context['recent_games'] and league_id:
-            team_id = context['recent_games'][0].get('team_id')
-            avg_query = supabase.table("player_season_averages").select("*").ilike("full_name", f"%{player_name}%").eq("team_id", team_id)
-        else:
-            avg_query = supabase.table("player_season_averages").select("*").ilike("full_name", f"%{player_name}%")
-        
+        # Note: player_season_averages doesn't have league_id or team_id, so we rely on player name match only
+        avg_query = supabase.table("player_season_averages").select("*").ilike("full_name", f"%{player_name}%")
         averages = avg_query.execute()
         context['season_averages'] = averages.data[0] if averages.data else {}
         
@@ -214,15 +208,29 @@ def build_league_context(league_id: str) -> Dict:
         teams = supabase.table("teams").select("*").eq("league_id", league_id).execute()
         context['teams'] = teams.data if teams.data else []
         
-        # Fetch top scorers from season averages
-        # Since player_season_averages doesn't have league_id, we filter by team_id
-        if context['teams']:
-            team_ids = [team['team_id'] for team in context['teams']]
-            # Query with team_id filter using .in_() method
-            top_scorers = supabase.table("player_season_averages").select("*").in_(
-                "team_id", team_ids
-            ).order("spoints", desc=True).limit(10).execute()
-            context['top_scorers'] = top_scorers.data if top_scorers.data else []
+        # Fetch top scorers from player_stats
+        # player_season_averages doesn't have league_id or team_id, so we use player_stats
+        # Aggregate by player to get total points
+        from collections import defaultdict
+        
+        stats_query = supabase.table("player_stats").select("full_name, spoints, team_name").eq(
+            "league_id", league_id
+        ).execute()
+        
+        if stats_query.data:
+            # Aggregate points by player
+            player_totals = defaultdict(lambda: {"full_name": "", "total_points": 0, "team_name": ""})
+            for stat in stats_query.data:
+                name = stat.get('full_name')
+                points = stat.get('spoints', 0) or 0
+                if name:
+                    player_totals[name]['full_name'] = name
+                    player_totals[name]['total_points'] += points
+                    player_totals[name]['team_name'] = stat.get('team_name', '')
+            
+            # Sort and get top 10
+            sorted_players = sorted(player_totals.values(), key=lambda x: x['total_points'], reverse=True)[:10]
+            context['top_scorers'] = sorted_players
         
         # Fetch upcoming games
         games = supabase.table("game_schedule").select("*").eq(
