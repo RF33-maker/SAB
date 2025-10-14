@@ -74,22 +74,37 @@ Preferred communication style: Simple, everyday language.
 
 **Rationale**: Supabase provides a managed PostgreSQL database with built-in REST API, authentication, and real-time capabilities. The schema is denormalized for query performance, storing all stats in a single table rather than normalized relations.
 
-### AI Integration
+### AI Integration (RAG Architecture)
 
-**OpenAI Assistant API**:
-- Persistent assistant with custom function calling capabilities
+**OpenAI Assistant API with Retrieval-Augmented Generation**:
+- Persistent assistant optimized for context-based responses
 - Thread-based conversation management for context retention
-- In-memory caching for delayed responses and player data
+- RAG flow: Pre-fetch relevant data → Build context → Send to AI agent
 
-**Custom Tools/Functions**:
-- `get_player_stats` - Retrieves specific statistics for players
-- `get_top_players` - Identifies league leaders in various categories  
-- `get_game_summary` - Provides AI-generated game analysis
-- `get_team_analysis` - Analyzes team performance patterns
-- `get_advanced_insights` - Calculates advanced metrics
-- `get_player_trending` - Identifies performance trends
+**RAG Pipeline** (Added October 2025):
+1. **Entity Detection** (`app/utils/rag_utils.py`):
+   - Analyzes user questions to identify player names, team names, or league context
+   - Uses database lookups and keyword matching for precision
+   - Supports league_id filtering for accurate entity resolution
 
-**Design Decision**: Function calling approach allows the AI to directly query the database with structured parameters, providing accurate data-driven responses rather than hallucinated statistics.
+2. **Context Builders**:
+   - `build_player_context()` - Fetches recent games, season averages, team info from Supabase
+   - `build_team_context()` - Retrieves team info, roster, recent games, team stats
+   - `build_league_context()` - Aggregates league info, teams, top scorers, upcoming games
+   - `build_general_context()` - Handles open-ended queries with league-wide data
+
+3. **Data Sources**:
+   - Queries Supabase tables: `player_stats`, `player_season_averages`, `teams`, `players`, `game_schedule`, `team_stats`, `leagues`
+   - Structures JSON context optimized for AI consumption
+   - Filters data by league_id when provided for precise results
+
+**Assistant Instructions**:
+- Trained to use ONLY provided CONTEXT data (no hallucinations)
+- Responds with exact numbers and stats from database
+- Acknowledges when data is missing rather than guessing
+- Natural, conversational responses grounded in factual data
+
+**Design Decision**: RAG approach ensures 100% accuracy by pre-fetching all relevant data and explicitly providing it to the AI. Unlike function calling, the AI cannot request external data—it must work with the structured context provided, eliminating potential hallucinations.
 
 ### Analytics & Visualization
 
