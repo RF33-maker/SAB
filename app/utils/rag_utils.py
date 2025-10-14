@@ -120,9 +120,13 @@ def build_player_context(player_name: str, league_id: Optional[str] = None) -> D
         context['recent_games'] = recent_games.data if recent_games.data else []
         
         # Fetch season averages
-        avg_query = supabase.table("player_season_averages").select("*").ilike("full_name", f"%{player_name}%")
-        if league_id:
-            avg_query = avg_query.eq("league_id", league_id)
+        # Note: player_season_averages doesn't have league_id, so we rely on player name match
+        # If we have recent_games, we can filter by team_id instead
+        if context['recent_games'] and league_id:
+            team_id = context['recent_games'][0].get('team_id')
+            avg_query = supabase.table("player_season_averages").select("*").ilike("full_name", f"%{player_name}%").eq("team_id", team_id)
+        else:
+            avg_query = supabase.table("player_season_averages").select("*").ilike("full_name", f"%{player_name}%")
         
         averages = avg_query.execute()
         context['season_averages'] = averages.data[0] if averages.data else {}
@@ -211,10 +215,14 @@ def build_league_context(league_id: str) -> Dict:
         context['teams'] = teams.data if teams.data else []
         
         # Fetch top scorers from season averages
-        top_scorers = supabase.table("player_season_averages").select("*").eq(
-            "league_id", league_id
-        ).order("spoints", desc=True).limit(10).execute()
-        context['top_scorers'] = top_scorers.data if top_scorers.data else []
+        # Since player_season_averages doesn't have league_id, we filter by team_id
+        if context['teams']:
+            team_ids = [team['team_id'] for team in context['teams']]
+            # Query with team_id filter using .in_() method
+            top_scorers = supabase.table("player_season_averages").select("*").in_(
+                "team_id", team_ids
+            ).order("spoints", desc=True).limit(10).execute()
+            context['top_scorers'] = top_scorers.data if top_scorers.data else []
         
         # Fetch upcoming games
         games = supabase.table("game_schedule").select("*").eq(
