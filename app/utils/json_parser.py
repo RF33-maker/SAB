@@ -499,7 +499,7 @@ def run_from_excel(path: str, user_id: str = None):
 
     print(f"📊 Loaded {len(df)} rows from Excel")
 
-    required_cols = ["Competition Name", "Match Time", "Home Team", "Away Team", "Game Key", "LiveStats URL"]
+    required_cols = ["Competition Name", "Match Time", "Home Team", "Away Team", "LiveStats URL"]
     for col in required_cols:
         if col not in df.columns:
             raise ValueError(f"❌ Excel file must have a column named '{col}'.")
@@ -540,7 +540,16 @@ def run_from_excel(path: str, user_id: str = None):
             
         home_team_name = safe_str(row["Home Team"])
         away_team_name = safe_str(row["Away Team"])
-        game_key = safe_str(row["Game Key"])
+        
+        # Handle Game Key - use existing value or auto-generate if missing/empty
+        game_key = safe_str(row.get("Game Key", "")) if "Game Key" in df.columns else ""
+        if not game_key or game_key == "nan":
+            date_part = game_date.split("T")[0] if game_date else "unknown"
+            home_safe = home_team_name.replace(" ", "_")
+            away_safe = away_team_name.replace(" ", "_")
+            game_key = f"{date_part}_{home_safe}_vs_{away_safe}"
+            print(f"   🔑 Auto-generated game_key: {game_key}")
+        
         url = safe_str(row["LiveStats URL"])
         
         # Optional: Pool column (for leagues with multiple pools like NBL Division 1)
