@@ -512,14 +512,31 @@ def run_from_excel(path: str, user_id: str = None):
         
         league_name = safe_str(row["Competition Name"])
         
-        game_date_raw = row["Match Time"]
-        if pd.notna(game_date_raw):
-            if isinstance(game_date_raw, pd.Timestamp):
-                game_date = game_date_raw.strftime("%Y-%m-%d")
-            else:
-                game_date = str(game_date_raw)
-        else:
-            game_date = None
+        from datetime import datetime
+
+        def normalize_matchtime(value):
+            if pd.isna(value) or not value:
+                return None
+
+                # Case 1: already a pandas Timestamp
+            if isinstance(value, pd.Timestamp):
+                return value.strftime("%Y-%m-%dT%H:%M:%S")
+
+                # Case 2: string version
+            value_str = str(value).strip()
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%Y/%m/%d %H:%M", "%d/%m/%Y %H:%M"):
+                try:
+                    return datetime.strptime(value_str, fmt).strftime("%Y-%m-%dT%H:%M:%S")
+                except ValueError:
+                    continue
+
+            print(f"⚠️ Could not parse match time: {value_str}")
+            return None
+
+
+            # Replace the old section with this:
+        game_date = normalize_matchtime(row["Match Time"])
+
             
         home_team_name = safe_str(row["Home Team"])
         away_team_name = safe_str(row["Away Team"])
