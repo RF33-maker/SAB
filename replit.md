@@ -61,6 +61,13 @@ Preferred communication style: Simple, everyday language.
   - Composite conflict keys prevent cross-game data corruption
   - Player ID mapping keyed by (team_id, name) to handle duplicate names across teams
   - Proper foreign key relationships: game_key, league_id, team_id, player_id
+- **Status Field System** (Best Practice for Live vs Final Stats):
+  - All stats initially marked with `status: 'live'` during active games
+  - Stats continuously update via upsert as game progresses
+  - Automatic game completion detection checks: explicit status flags, period >= 4 with expired clock, end-of-game play markers
+  - When game finishes, all records automatically updated to `status: 'final'`
+  - Finalized games excluded from polling to optimize performance
+  - Query design: Use `WHERE status = 'final'` for season stats/historical analysis, `WHERE status = 'live'` for real-time box scores
 - **Production Design**: 10-second polling interval, graceful error handling, traceback logging
 
 **Data Validation**: Player name normalization removes captain designations (C) and handles bracket variations for consistent database queries
