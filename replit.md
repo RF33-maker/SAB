@@ -40,12 +40,28 @@ Preferred communication style: Simple, everyday language.
 - **Process**: Extracts game metadata (date, teams, venue, scores) and individual player statistics from box score PDFs
 - **Challenge Addressed**: Complex regex patterns handle various box score formats and team name variations
 
-**Excel Parsing**:
+**Excel Parsing** (Administrative/Bulk Import Tool):
 - **Technology**: Pandas for structured data processing
 - **Process**: Field mapping system translates various column naming conventions to standardized schema
 - **Normalization**: Handles case-insensitive field matching and multiple naming variants
 - **Pool Support**: Optional "Pool" column for leagues with multiple pools (e.g., NBL Division 1). Automatically detected and stored in game_schedule when present; gracefully skipped for leagues without pools
 - **Schedule-First Processing**: Games are added to game_schedule immediately from Excel data, then LiveStats data is fetched if available. This enables future/unplayed games to appear in schedules while stats are processed separately for completed games
+
+**Live Game Parser** (Primary Production Parser - Added October 2025):
+- **Technology**: Continuous polling system (`app/live_parser.py`)
+- **Purpose**: Real-time processing of live games as primary data source
+- **Process**:
+  - Polls `game_schedule` table for games with LiveStats data.json URLs
+  - Extracts complete game data: team stats, player stats, plays, shots
+  - Uses league_id context from game_schedule for proper entity relationships
+  - Auto-creates teams/players if not pre-loaded from Excel
+  - Syncs data to: `team_stats`, `player_stats`, `live_events`, `shot_chart`
+- **Data Integrity**:
+  - Normalizes all player/team names using shared functions from json_parser
+  - Composite conflict keys prevent cross-game data corruption
+  - Player ID mapping keyed by (team_id, name) to handle duplicate names across teams
+  - Proper foreign key relationships: game_key, league_id, team_id, player_id
+- **Production Design**: 10-second polling interval, graceful error handling, traceback logging
 
 **Data Validation**: Player name normalization removes captain designations (C) and handles bracket variations for consistent database queries
 
