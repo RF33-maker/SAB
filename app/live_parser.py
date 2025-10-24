@@ -1,8 +1,8 @@
 
 import time
 import requests
-from app.utils.supabase_client import supabase
 from app.utils.json_parser import (
+    supabase,
     normalize_team_name,
     normalize_player_name,
     get_or_create_team,
