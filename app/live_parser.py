@@ -15,15 +15,63 @@ from app.utils.json_parser import (
 POLL_INTERVAL = 10
 
 
+def is_game_finished(data):
+    """Detect if a game has finished based on the live data."""
+    game_status = data.get("status", {})
+    
+    # Check explicit status field
+    if game_status.get("finished") or game_status.get("final"):
+        return True
+    
+    # Check if game has ended based on period
+    current_period = game_status.get("period") or game_status.get("periodNumber")
+    if current_period and int(current_period) >= 4:
+        # Check if clock is expired (00:00 or empty)
+        clock = game_status.get("clock", "")
+        if not clock or clock == "00:00" or clock == "0:00":
+            return True
+    
+    # Check plays for end of game indicator
+    plays = data.get("Plays") or data.get("plays") or []
+    if plays:
+        last_play = plays[-1]
+        # If last play is in period 4+ and it's an "end of game" type action
+        if last_play.get("period", 0) >= 4 and last_play.get("actionType") in ["gameend", "endofgame"]:
+            return True
+    
+    return False
+
+
+def finalize_game_stats(game_key):
+    """Mark all stats for a game as 'final' once the game is complete."""
+    try:
+        # Update player_stats
+        supabase.table("player_stats").update({"status": "final"}).eq("game_key", game_key).execute()
+        
+        # Update team_stats
+        supabase.table("team_stats").update({"status": "final"}).eq("game_key", game_key).execute()
+        
+        # Mark game as complete in game_schedule
+        supabase.table("game_schedule").update({"status": "final"}).eq("game_key", game_key).execute()
+        
+        print(f"🏁 Game {game_key} marked as FINAL")
+        return True
+    except Exception as e:
+        print(f"❌ Error finalizing game {game_key}: {e}")
+        return False
+
+
 def fetch_active_games():
-    """Return all games from game_schedule that have a LiveStats URL."""
+    """Return all games from game_schedule that have a LiveStats URL and aren't final yet."""
     res = supabase.table("game_schedule").select(
-        "game_key, league_id, home_team_id, away_team_id, competitionname, LiveStats URL"
+        "game_key, league_id, home_team_id, away_team_id, competitionname, LiveStats URL, status"
     ).execute()
     
     return [
         g for g in res.data
-        if g.get("LiveStats URL") and "data.json" in g.get("LiveStats URL", "")
+        if g.get("LiveStats URL") 
+        and "data.json" in g.get("LiveStats URL", "")
+        and g.get("status") != "final"
     ]
 
 
@@ -71,7 +119,8 @@ def process_game(game):
                 "game_key": game_key,
                 "team_id": team_id,
                 "league_id": league_id,
-                "identifier_duplicate": f"{numeric_id}_{team_id}_{side}"
+                "identifier_duplicate": f"{numeric_id}_{team_id}_{side}",
+                "status": "live"
             }
             for json_key, db_key in TEAM_FIELD_MAP.items():
                 team_record[db_key] = team.get(json_key)
@@ -123,7 +172,8 @@ def process_game(game):
                     "full_name": normalized_name,
                     "team_name": team_name,
                     "league_id": league_id,
-                    "identifier_duplicate": f"{numeric_id}_{player_id}"
+                    "identifier_duplicate": f"{numeric_id}_{player_id}",
+                    "status": "live"
                 }
                 for json_key, db_key in PLAYER_FIELD_MAP.items():
                     player_record[db_key] = player.get(json_key)
@@ -194,6 +244,10 @@ def process_game(game):
                 on_conflict=["game_key","player_name","period","clock"]
             ).execute()
             print(f"🎯 {len(shots)} shots synced for {game_key}")
+
+        # Check if game is finished and finalize if so
+        if is_game_finished(data):
+            finalize_game_stats(game_key)
 
     except Exception as e:
         print(f"❌ Error processing {game_key}: {e}")
