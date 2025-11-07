@@ -272,7 +272,7 @@ def get_or_create_team(league_id: str, name: str, user_id: str = None):
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
     query = supabase.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
-        query = query.eq("shirt_number", shirtnumber)
+        query = query.eq("shirtNumber", shirtnumber)
     res = query.execute()
     
     if res.data:
@@ -315,7 +315,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
     insert_data = {
         "full_name": full_name,
         "team_id": team_id,
-        "shirt_number": shirtnumber
+        "shirtNumber": shirtnumber
     }
     if team_name:
         insert_data["team_name"] = team_name
