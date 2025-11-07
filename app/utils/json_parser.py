@@ -272,7 +272,7 @@ def get_or_create_team(league_id: str, name: str, user_id: str = None):
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
     query = supabase.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
-        query = query.eq("shirtNumber", shirtnumber)
+        query = query.eq("shirt_number", shirtnumber)
     res = query.execute()
     
     if res.data:
@@ -315,7 +315,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
     insert_data = {
         "full_name": full_name,
         "team_id": team_id,
-        "shirtNumber": shirtnumber
+        "shirt_number": shirtnumber
     }
     if team_name:
         insert_data["team_name"] = team_name
@@ -398,29 +398,40 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     # --- Insert player stats ---
     player_records = []
-    for side, team in teams.items():
-        team_id = get_or_create_team(league_id, team.get("name"), user_id)
-        team_name = team.get("name")
-        for pid, player in team.get("pl", {}).items():
-            full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
-            player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), team_name, league_id, user_id)
+    try:
+        for side, team in teams.items():
+            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            team_name = team.get("name")
+            for pid, player in team.get("pl", {}).items():
+                try:
+                    full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
+                    player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), team_name, league_id, user_id)
 
-            player_record = {
-                "numeric_id": numeric_id,
-                "side": side,
-                "game_key": game_key,
-                "team_id": team_id,
-                "player_id": player_id,
-                "full_name": full_name,
-                "team_name": team.get("name"),
-                "league_id": league_id,
-                "identifier_duplicate": f"{numeric_id}_{player_id}"
-            }
-            for json_key, db_key in PLAYER_FIELD_MAP.items():
-                player_record[db_key] = player.get(json_key)
-            player_records.append(player_record)
+                    player_record = {
+                        "numeric_id": numeric_id,
+                        "side": side,
+                        "game_key": game_key,
+                        "team_id": team_id,
+                        "player_id": player_id,
+                        "full_name": full_name,
+                        "team_name": team.get("name"),
+                        "league_id": league_id,
+                        "identifier_duplicate": f"{numeric_id}_{player_id}"
+                    }
+                    for json_key, db_key in PLAYER_FIELD_MAP.items():
+                        player_record[db_key] = player.get(json_key)
+                    player_records.append(player_record)
+                except Exception as e:
+                    player_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip() or f"Player {pid}"
+                    print(f"⚠️  Failed to process player {player_name}: {e}")
+                    continue
 
-    insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
+        print(f"📊 Prepared {len(player_records)} player records for game {numeric_id}")
+        insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
+    except Exception as e:
+        print(f"❌ Failed to process player stats for game {numeric_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
     # --- Insert shots ---
     shots = data.get("shot", [])
