@@ -71,39 +71,52 @@ def backfill_all_games():
                 skipped += 1
                 continue
             
+            # Get teams data for mapping tno to team names
+            teams = data.get("tm", {})
+            
             # Process each play-by-play event
             pbp_records = []
             for e in pbp:
                 team_id = None
                 team_name = None
-                if e.get("tm"):
-                    team_name = e.get("tm")
+                tno = e.get("tno")
+                if tno and str(tno) in teams:
+                    team_name = teams[str(tno)].get("name")
                     team_id = get_or_create_team(league_id, team_name)
 
                 player_id = None
-                if e.get("pn") and team_id:
-                    player_id = get_or_create_player(e.get("pn"), team_id, None, team_name, league_id)
+                player_name = e.get("player")
+                if player_name and team_id:
+                    player_id = get_or_create_player(player_name, team_id, e.get("shirtNumber"), team_name, league_id)
+
+                # Build score string from s1 and s2
+                s1 = e.get("s1", "")
+                s2 = e.get("s2", "")
+                score = f"{s1}-{s2}" if s1 and s2 else None
+
+                # Keep qualifiers as array
+                qualifiers = e.get("qualifier", [])
 
                 pbp_record = {
                     "league_id": league_id,
                     "game_key": game_key,
                     "team_id": team_id,
                     "player_id": player_id,
-                    "action_number": e.get("evt"),
-                    "period": e.get("per"),
-                    "clock": e.get("cl"),
-                    "player_name": e.get("pn"),
-                    "team_no": None,
-                    "action_type": e.get("etype"),
-                    "sub_type": None,
-                    "qualifiers": None,
-                    "success": None,
-                    "scoring": None,
-                    "points": e.get("pts"),
-                    "score": e.get("score"),
+                    "action_number": e.get("actionNumber"),
+                    "period": e.get("period"),
+                    "clock": e.get("clock"),
+                    "player_name": player_name,
+                    "team_no": tno,
+                    "action_type": e.get("actionType"),
+                    "sub_type": e.get("subType"),
+                    "qualifiers": qualifiers if qualifiers else None,
+                    "success": e.get("success"),
+                    "scoring": e.get("scoring"),
+                    "points": None,
+                    "score": score,
                     "x_coord": None,
                     "y_coord": None,
-                    "description": e.get("txt"),
+                    "description": None,
                 }
                 pbp_records.append(pbp_record)
 
