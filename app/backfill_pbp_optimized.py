@@ -75,12 +75,41 @@ def get_team_id(league_id, team_name):
     return fuzzy_match(team_name, TEAMS_CACHE[league_id])
 
 
-def get_player_id(team_id, player_name):
-    """Get player_id from cache with fuzzy matching."""
-    if not player_name or not team_id or team_id not in PLAYERS_CACHE:
+def get_or_create_player(team_id, player_name, shirt_number, team_name, league_id):
+    """Get player_id from cache with fuzzy matching, or create if not found."""
+    if not player_name or not team_id:
         return None
     
-    return fuzzy_match(player_name, PLAYERS_CACHE[team_id])
+    # Try to find in cache first
+    if team_id in PLAYERS_CACHE:
+        player_id = fuzzy_match(player_name, PLAYERS_CACHE[team_id])
+        if player_id:
+            return player_id
+    
+    # Player not found - create new one
+    try:
+        insert_data = {
+            "full_name": player_name,
+            "team_id": team_id,
+            "shirtNumber": shirt_number
+        }
+        if team_name:
+            insert_data["team_name"] = team_name
+        if league_id:
+            insert_data["league_id"] = league_id
+        
+        new = supabase.table("players").insert(insert_data).execute()
+        new_player_id = new.data[0]["id"]
+        
+        # Add to cache
+        if team_id not in PLAYERS_CACHE:
+            PLAYERS_CACHE[team_id] = {}
+        PLAYERS_CACHE[team_id][player_name.lower()] = new_player_id
+        
+        return new_player_id
+    except Exception as e:
+        # If insert fails (maybe duplicate), try to find again
+        return None
 
 
 def backfill_optimized():
@@ -144,6 +173,7 @@ def backfill_optimized():
             for e in pbp:
                 tno = e.get("tno")
                 team_id = None
+                team_name = None
                 
                 # Get team_id from cache
                 if tno and str(tno) in teams:
@@ -151,11 +181,17 @@ def backfill_optimized():
                     if team_name:
                         team_id = get_team_id(league_id, team_name)
                 
-                # Get player_id from cache
+                # Get or create player
                 player_id = None
                 player_name = e.get("player")
                 if player_name and team_id:
-                    player_id = get_player_id(team_id, player_name)
+                    player_id = get_or_create_player(
+                        team_id, 
+                        player_name, 
+                        e.get("shirtNumber"),
+                        team_name,
+                        league_id
+                    )
                 
                 # Build score
                 s1 = e.get("s1", "")
