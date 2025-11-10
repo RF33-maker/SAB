@@ -17,13 +17,13 @@ PLAYERS_CACHE = {}  # team_id -> {name: player_id}
 def load_all_teams():
     """Load all teams into memory cache."""
     print("📥 Loading teams into cache...")
-    result = supabase.table("teams").select("id, name, league_id").execute()
+    result = supabase.table("teams").select("team_id, name, league_id").execute()
     
     for team in result.data:
         league_id = team["league_id"]
         if league_id not in TEAMS_CACHE:
             TEAMS_CACHE[league_id] = {}
-        TEAMS_CACHE[league_id][team["name"].lower()] = team["id"]
+        TEAMS_CACHE[league_id][team["name"].lower()] = team["team_id"]
     
     print(f"   ✅ Cached {len(result.data)} teams")
 
