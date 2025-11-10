@@ -326,71 +326,6 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
     return new.data[0]["id"]
 
 # ----------------------------
-# Play-by-Play Extraction (Periods/Actions Format)
-# ----------------------------
-def extract_play_by_play(game_data, league_id, game_key, team_map):
-    """
-    Extract play-by-play data from FIBA JSON with periods/actions structure.
-    
-    Args:
-        game_data: The full JSON data from the FIBA LiveStats API
-        league_id: The league identifier
-        game_key: Unique game identifier
-        team_map: Dictionary mapping "A" and "B" to team IDs (e.g., {"A": home_team_id, "B": away_team_id})
-    """
-    try:
-        pbp_rows = []
-        periods = game_data.get("periods", [])
-        
-        if not periods:
-            print(f"⏭️  No periods data found for {game_key}")
-            return
-        
-        for period in periods:
-            period_num = period.get("number")
-            actions = period.get("actions", [])
-            
-            for action in actions:
-                team_letter = action.get("team")
-                team_id = team_map.get(team_letter)
-                
-                pbp_rows.append({
-                    "league_id": league_id,
-                    "game_key": game_key,
-                    "team_id": team_id,
-                    "action_number": action.get("actionNumber"),
-                    "period": period_num,
-                    "clock": action.get("clock"),
-                    "player_name": action.get("player"),
-                    "team_no": 1 if team_letter == "A" else 2 if team_letter == "B" else None,
-                    "action_type": action.get("type"),
-                    "sub_type": action.get("subType"),
-                    "qualifiers": action.get("qualifiers"),
-                    "success": action.get("success"),
-                    "scoring": action.get("scoring"),
-                    "points": action.get("spoints", 0),
-                    "score": action.get("score"),
-                    "x_coord": action.get("x"),
-                    "y_coord": action.get("y"),
-                    "description": action.get("description") or None,
-                })
-        
-        if pbp_rows:
-            print(f"📥 Inserting {len(pbp_rows)} play-by-play records for {game_key}")
-            supabase.table("live_events").upsert(
-                pbp_rows, 
-                on_conflict="game_key,action_number"
-            ).execute()
-            print(f"✅ Successfully inserted {len(pbp_rows)} PBP rows for {game_key}")
-        else:
-            print(f"⚠️  No play-by-play actions found for {game_key}")
-            
-    except Exception as e:
-        print(f"❌ Error extracting play-by-play for {game_key}: {e}")
-        import traceback
-        traceback.print_exc()
-
-# ----------------------------
 # Game Parser
 # ----------------------------
 
@@ -518,7 +453,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
 
-    # --- Insert play-by-play ---
+    # --- Insert play-by-play into live_events ---
     pbp = data.get("pbp", [])
     pbp_records = []
     for e in pbp:
@@ -533,23 +468,37 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             player_id = get_or_create_player(e.get("pn"), team_id, None, team_name, league_id, user_id)
 
         pbp_record = {
-            "numeric_id": numeric_id,
-            "game_id": numeric_id,
+            "league_id": league_id,
+            "game_key": game_key,
             "team_id": team_id,
             "player_id": player_id,
-            "identifier_duplicate": f"{numeric_id}_{e.get('evt')}_{e.get('per')}"
+            "action_number": e.get("evt"),
+            "period": e.get("per"),
+            "clock": e.get("cl"),
+            "player_name": e.get("pn"),
+            "team_no": None,
+            "action_type": e.get("etype"),
+            "sub_type": None,
+            "qualifiers": None,
+            "success": None,
+            "scoring": None,
+            "points": e.get("pts"),
+            "score": e.get("score"),
+            "x_coord": None,
+            "y_coord": None,
+            "description": e.get("txt"),
         }
-        for json_key, db_key in PBP_FIELD_MAP.items():
-            pbp_record[db_key] = e.get(json_key)
         pbp_records.append(pbp_record)
 
-    # Deduplicate before insert
-    unique_pbp = {rec["identifier_duplicate"]: rec for rec in pbp_records}
-    insert_supabase("play_by_play", list(unique_pbp.values()), conflict_keys="identifier_duplicate")
-
-    # --- Extract play-by-play from periods/actions format (if present) ---
-    team_map = {"A": home_team_id, "B": away_team_id}
-    extract_play_by_play(data, league_id, game_key, team_map)
+    if pbp_records:
+        try:
+            # Delete existing events for this game to ensure idempotency
+            supabase.table("live_events").delete().eq("game_key", game_key).execute()
+            # Insert new events
+            supabase.table("live_events").insert(pbp_records).execute()
+            print(f"✅ Inserted {len(pbp_records)} play-by-play events into live_events")
+        except Exception as e:
+            print(f"❌ Error inserting play-by-play: {e}")
 
 # ----------------------------
 # Excel runner

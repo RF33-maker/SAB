@@ -6,8 +6,8 @@ Backfill script to populate play-by-play data for all existing games.
 import requests
 from app.utils.json_parser import (
     supabase,
-    extract_play_by_play,
-    get_or_create_team
+    get_or_create_team,
+    get_or_create_player
 )
 
 
@@ -65,28 +65,57 @@ def backfill_all_games():
             
             data = response.json()
             
-            # Debug: show top-level keys in the JSON
-            if processed == 0 and skipped == 0:
-                print(f"   🔍 JSON structure keys: {list(data.keys())[:20]}")
+            # Extract play-by-play from pbp array
+            pbp = data.get("pbp", [])
+            if not pbp:
+                skipped += 1
+                continue
             
-            # Check if there's periods data
-            if not data.get("periods"):
-                # Try alternative keys that might contain play-by-play
-                if not data.get("pbp") and not data.get("Plays") and not data.get("plays"):
-                    if processed == 0 and skipped == 0:
-                        print(f"   ⚠️  No 'periods', 'pbp', 'Plays', or 'plays' data found")
-                    skipped += 1
-                    continue
-                else:
-                    print(f"   ℹ️  Game uses alternative PBP format (not periods/actions)")
-                    skipped += 1
-                    continue
-            
-            # Build team map
-            team_map = {"A": home_team_id, "B": away_team_id}
-            
-            # Extract play-by-play
-            extract_play_by_play(data, league_id, game_key, team_map)
+            # Process each play-by-play event
+            pbp_records = []
+            for e in pbp:
+                team_id = None
+                team_name = None
+                if e.get("tm"):
+                    team_name = e.get("tm")
+                    team_id = get_or_create_team(league_id, team_name)
+
+                player_id = None
+                if e.get("pn") and team_id:
+                    player_id = get_or_create_player(e.get("pn"), team_id, None, team_name, league_id)
+
+                pbp_record = {
+                    "league_id": league_id,
+                    "game_key": game_key,
+                    "team_id": team_id,
+                    "player_id": player_id,
+                    "action_number": e.get("evt"),
+                    "period": e.get("per"),
+                    "clock": e.get("cl"),
+                    "player_name": e.get("pn"),
+                    "team_no": None,
+                    "action_type": e.get("etype"),
+                    "sub_type": None,
+                    "qualifiers": None,
+                    "success": None,
+                    "scoring": None,
+                    "points": e.get("pts"),
+                    "score": e.get("score"),
+                    "x_coord": None,
+                    "y_coord": None,
+                    "description": e.get("txt"),
+                }
+                pbp_records.append(pbp_record)
+
+            if pbp_records:
+                try:
+                    # Delete existing events for this game to ensure idempotency
+                    supabase.table("live_events").delete().eq("game_key", game_key).execute()
+                    # Insert new events
+                    supabase.table("live_events").insert(pbp_records).execute()
+                    print(f"   ✅ Inserted {len(pbp_records)} play-by-play events")
+                except Exception as e:
+                    print(f"   ❌ Error: {e}")
             
             processed += 1
             
