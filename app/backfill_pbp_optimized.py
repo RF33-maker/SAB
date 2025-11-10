@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
 Optimized backfill script with team/player ID linking.
-Uses in-memory caching to speed up fuzzy matching.
+Uses in-memory caching and proven fuzzy matching from json_parser.
 """
 
 import requests
-from difflib import SequenceMatcher
-from app.utils.json_parser import supabase
+from app.utils.json_parser import supabase, find_similar_player, normalize_player_name
 
 
 # Global caches
 TEAMS_CACHE = {}  # league_id -> {name: team_id}
-PLAYERS_CACHE = {}  # team_id -> {name: player_id}
+PLAYERS_CACHE = {}  # "team_id:normalized_name" -> player_id
 
 
 def load_all_teams():
@@ -28,100 +27,56 @@ def load_all_teams():
     print(f"   ✅ Cached {len(result.data)} teams")
 
 
-def load_all_players():
-    """Load all players into memory cache."""
-    print("📥 Loading players into cache...")
-    result = supabase.table("players").select("id, full_name, team_id").execute()
-    
-    for player in result.data:
-        team_id = player["team_id"]
-        if team_id and player["full_name"]:
-            if team_id not in PLAYERS_CACHE:
-                PLAYERS_CACHE[team_id] = {}
-            PLAYERS_CACHE[team_id][player["full_name"].lower()] = player["id"]
-    
-    print(f"   ✅ Cached {len(result.data)} players")
-
-
-def fuzzy_match(name, candidates, threshold=0.85):
-    """Find best fuzzy match from candidates."""
-    if not name or not candidates:
-        return None
-    
-    name_lower = name.lower()
-    
-    # Exact match first
-    if name_lower in candidates:
-        return candidates[name_lower]
-    
-    # Fuzzy match
-    best_score = 0
-    best_match = None
-    
-    for candidate_name, candidate_id in candidates.items():
-        score = SequenceMatcher(None, name_lower, candidate_name).ratio()
-        if score > best_score and score >= threshold:
-            best_score = score
-            best_match = candidate_id
-    
-    return best_match
-
-
 def get_team_id(league_id, team_name):
-    """Get team_id from cache with fuzzy matching."""
+    """Get team_id from cache with exact matching."""
     if not team_name or league_id not in TEAMS_CACHE:
         return None
     
-    return fuzzy_match(team_name, TEAMS_CACHE[league_id])
+    return TEAMS_CACHE[league_id].get(team_name.lower())
 
 
-def get_or_create_player(team_id, player_name, shirt_number, team_name, league_id):
-    """Get player_id from cache with fuzzy matching, or create if not found."""
+def get_player_id_with_fallback(team_id, player_name):
+    """
+    Get player_id with two-pass fuzzy matching:
+    1. Try strict threshold (0.85)
+    2. If no match, try relaxed threshold (0.75)
+    
+    Does NOT create new players - only links to existing ones.
+    """
     if not player_name or not team_id:
         return None
     
-    # Try to find in cache first
-    if team_id in PLAYERS_CACHE:
-        player_id = fuzzy_match(player_name, PLAYERS_CACHE[team_id])
-        if player_id:
-            return player_id
+    # Check cache first
+    cache_key = f"{team_id}:{normalize_player_name(player_name).lower()}"
+    if cache_key in PLAYERS_CACHE:
+        return PLAYERS_CACHE[cache_key]
     
-    # Player not found - create new one
-    try:
-        insert_data = {
-            "full_name": player_name,
-            "team_id": team_id,
-            "shirtNumber": shirt_number
-        }
-        if team_name:
-            insert_data["team_name"] = team_name
-        if league_id:
-            insert_data["league_id"] = league_id
-        
-        new = supabase.table("players").insert(insert_data).execute()
-        new_player_id = new.data[0]["id"]
-        
-        # Add to cache
-        if team_id not in PLAYERS_CACHE:
-            PLAYERS_CACHE[team_id] = {}
-        PLAYERS_CACHE[team_id][player_name.lower()] = new_player_id
-        
-        return new_player_id
-    except Exception as e:
-        # If insert fails (maybe duplicate), try to find again
-        return None
+    # Pass 1: Try strict threshold (0.85)
+    player = find_similar_player(player_name, team_id, similarity_threshold=0.85)
+    
+    # Pass 2: If no match, try relaxed threshold (0.75)
+    if not player:
+        player = find_similar_player(player_name, team_id, similarity_threshold=0.75)
+    
+    if player:
+        player_id = player["id"]
+        # Cache the result
+        PLAYERS_CACHE[cache_key] = player_id
+        return player_id
+    
+    return None
 
 
 def backfill_optimized():
     """
-    Fast backfill with team/player ID linking using cached lookups.
+    Backfill with two-pass fuzzy matching (0.85 then 0.75 threshold).
+    Does NOT create new players - only links to existing ones.
     """
     print("🔄 Starting OPTIMIZED play-by-play backfill...")
     print("="*70)
     
-    # Load all data into memory
+    # Load teams into memory
     load_all_teams()
-    load_all_players()
     
     print("\n📊 Fetching games...")
     result = supabase.table("game_schedule").select(
@@ -181,17 +136,11 @@ def backfill_optimized():
                     if team_name:
                         team_id = get_team_id(league_id, team_name)
                 
-                # Get or create player
+                # Get player_id with two-pass fuzzy matching (does NOT create new players)
                 player_id = None
                 player_name = e.get("player")
                 if player_name and team_id:
-                    player_id = get_or_create_player(
-                        team_id, 
-                        player_name, 
-                        e.get("shirtNumber"),
-                        team_name,
-                        league_id
-                    )
+                    player_id = get_player_id_with_fallback(team_id, player_name)
                 
                 # Build score
                 s1 = e.get("s1", "")
