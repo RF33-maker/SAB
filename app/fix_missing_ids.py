@@ -130,7 +130,8 @@ def fix_missing_ids():
     
     # Get count of records to fix
     print("📊 Analyzing gaps...")
-    total_missing = supabase.table("live_events").select("id", count="exact").not_.is_("player_name", "null").filter("player_id", "is", "null").execute().count
+    count_result = supabase.table("live_events").select("id", count="exact").not_.is_("player_name", "null").filter("player_id", "is", "null").execute()  # type: ignore
+    total_missing = count_result.count if count_result else 0
     
     print(f"   Records with player_name but missing player_id: {total_missing:,}")
     print()
@@ -162,7 +163,7 @@ def fix_missing_ids():
         
         result = retry_with_backoff(fetch_batch)
         
-        if not result.data:
+        if not result or not result.data:
             break
         
         print(f"\n[Batch {batch_num}] Processing {len(result.data)} records...")
