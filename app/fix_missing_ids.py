@@ -11,6 +11,7 @@ from app.utils.json_parser import supabase, find_similar_player, normalize_playe
 # Global caches
 TEAMS_CACHE = {}  # league_id -> {name: team_id}
 PLAYERS_CACHE = {}  # "team_id:normalized_name" -> player_id
+GAME_JSON_CACHE = {}  # game_key -> json data
 
 
 def load_all_teams():
@@ -64,16 +65,21 @@ def get_player_id_with_fallback(team_id, player_name):
     return None
 
 
-def get_team_name_from_json(game_key, team_no):
-    """Get team name from game's JSON data."""
+def get_game_json(game_key):
+    """Get game JSON data with caching."""
+    if game_key in GAME_JSON_CACHE:
+        return GAME_JSON_CACHE[game_key]
+    
     try:
         # Get LiveStats URL from game_schedule
         schedule = supabase.table("game_schedule").select('"LiveStats URL"').eq("game_key", game_key).execute()
         if not schedule.data:
+            GAME_JSON_CACHE[game_key] = None
             return None
         
         livestats_url = schedule.data[0].get("LiveStats URL")
         if not livestats_url:
+            GAME_JSON_CACHE[game_key] = None
             return None
         
         # Fetch JSON
@@ -83,16 +89,28 @@ def get_team_name_from_json(game_key, team_no):
         
         resp = requests.get(data_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code != 200:
+            GAME_JSON_CACHE[game_key] = None
             return None
         
         data = resp.json()
-        teams = data.get("tm", {})
-        
-        if str(team_no) in teams:
-            return teams[str(team_no)].get("name")
+        GAME_JSON_CACHE[game_key] = data
+        return data
         
     except Exception as e:
-        print(f"   ⚠️  Could not fetch team name: {e}")
+        print(f"   ⚠️  Could not fetch game JSON for {game_key}: {e}")
+        GAME_JSON_CACHE[game_key] = None
+        return None
+
+
+def get_team_name_from_json(game_key, team_no):
+    """Get team name from game's JSON data."""
+    data = get_game_json(game_key)
+    if not data:
+        return None
+    
+    teams = data.get("tm", {})
+    if str(team_no) in teams:
+        return teams[str(team_no)].get("name")
     
     return None
 
@@ -157,9 +175,7 @@ def fix_missing_ids():
         def fetch_batch():
             return supabase.table("live_events").select(
                 "id, game_key, league_id, team_no, player_name, player_id, team_id"
-            ).not_.is_("player_name", "null").or_(
-                "player_id.is.null,team_id.is.null"
-            ).range(offset, offset + BATCH_SIZE - 1).execute()
+            ).not_.is_("player_name", "null").is_("player_id", "null").range(offset, offset + BATCH_SIZE - 1).execute()
         
         result = retry_with_backoff(fetch_batch)
         
@@ -172,6 +188,9 @@ def fix_missing_ids():
         updates = []
         player_ids_added = 0
         team_ids_added = 0
+        
+        debug_no_team_id = 0
+        debug_no_player_match = 0
         
         for record in result.data:
             record_id = record["id"]
@@ -207,9 +226,16 @@ def fix_missing_ids():
                         update_data["player_id"] = player_id
                         player_ids_added += 1
                         needs_update = True
+                    else:
+                        debug_no_player_match += 1
+                else:
+                    debug_no_team_id += 1
             
             if needs_update:
                 updates.append(update_data)
+        
+        if debug_no_team_id > 0 or debug_no_player_match > 0:
+            print(f"   ⚠️  Debug: {debug_no_team_id} missing team_id, {debug_no_player_match} no player match")
         
         # Batch update
         if updates:

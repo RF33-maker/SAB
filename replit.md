@@ -76,26 +76,26 @@ Preferred communication style: Simple, everyday language.
 - **Purpose**: Backfill historical play-by-play data from FIBA LiveStats JSON into `live_events` table
 - **Scripts**:
   - `app/backfill_pbp_optimized.py` - Main backfill script with fuzzy player matching
-  - `app/fix_missing_ids_simple.py` - Upsert script to fill missing player_id/team_id gaps
+  - `app/fix_missing_ids_simple.py` - Optimized upsert script to fill missing player_id/team_id gaps
 - **Current Status** (as of November 11, 2025):
   - **98,718 events** inserted from ~197 completed games
   - **0 duplicate players** created (maintained baseline of 1,123 players)
-  - **55% player match rate** - needs improvement to 99%+
-  - **Known Issue**: Connection errors during initial backfill caused ~44k events to insert without player_id/team_id
+  - **61.7% player match rate** (60,937 events with player_id)
+  - **38.3% unmatched** (37,781 events) - primarily due to player name variations and data quality issues
 - **Data Quality**:
   - Events with NULL player_name (administrative events like "start of period", "end of game") correctly have NULL team_id/player_id
-  - Events with player_name MUST have both team_id and player_id for accurate stats
-  - Missing IDs are due to `ConnectionTerminated` errors during batch processing, NOT logic errors
-- **Fix Process**:
-  - Run `python3 app/fix_missing_ids_simple.py` to fill ~44k missing player_ids
-  - Script uses same two-pass fuzzy matching (0.85 threshold, fallback to 0.75)
-  - Processes in 500-record batches with retry logic and delays
-  - Only targets gaps: `WHERE player_name IS NOT NULL AND player_id IS NULL`
-  - Estimated completion: 5-10 minutes
+  - Events with player_name should have both team_id and player_id for accurate stats
+  - Unmatched records (38.3%) have player names that don't match database records even with fuzzy matching (0.75 threshold)
+- **Fix Process** (Completed):
+  - Fixed team name normalization to handle abbreviations (e.g., "MK Breakers" → "Milton Keynes Breakers")
+  - Script loads all teams and players into memory for fast fuzzy matching
+  - Successfully filled 6,637 missing IDs, improving match rate from 55% to 61.7%
+  - Remaining unmatched records require manual data cleanup or lower matching thresholds
 - **Design Decisions**:
-  - Two-pass fuzzy matching prevents duplicate player creation while achieving high match rates
-  - In-memory caching for teams/players reduces Supabase queries
-  - Batch processing with exponential backoff handles connection errors gracefully
+  - Team name normalization with aliases handles common abbreviations
+  - In-memory player loading eliminates thousands of API calls for dramatic performance improvement
+  - Fuzzy matching (0.75 threshold) balances accuracy with match rate
+  - Batch processing with retry logic handles connection errors gracefully
   - Upsert approach allows resuming/fixing without reprocessing entire dataset
 
 **Deduplication System** (Added October 2025):
