@@ -72,6 +72,32 @@ Preferred communication style: Simple, everyday language.
 
 **Data Validation**: Player name normalization removes captain designations (C) and handles bracket variations for consistent database queries
 
+**Play-by-Play Backfill System** (Added November 2025):
+- **Purpose**: Backfill historical play-by-play data from FIBA LiveStats JSON into `live_events` table
+- **Scripts**:
+  - `app/backfill_pbp_optimized.py` - Main backfill script with fuzzy player matching
+  - `app/fix_missing_ids_simple.py` - Upsert script to fill missing player_id/team_id gaps
+- **Current Status** (as of November 11, 2025):
+  - **98,718 events** inserted from ~197 completed games
+  - **0 duplicate players** created (maintained baseline of 1,123 players)
+  - **55% player match rate** - needs improvement to 99%+
+  - **Known Issue**: Connection errors during initial backfill caused ~44k events to insert without player_id/team_id
+- **Data Quality**:
+  - Events with NULL player_name (administrative events like "start of period", "end of game") correctly have NULL team_id/player_id
+  - Events with player_name MUST have both team_id and player_id for accurate stats
+  - Missing IDs are due to `ConnectionTerminated` errors during batch processing, NOT logic errors
+- **Fix Process**:
+  - Run `python3 app/fix_missing_ids_simple.py` to fill ~44k missing player_ids
+  - Script uses same two-pass fuzzy matching (0.85 threshold, fallback to 0.75)
+  - Processes in 500-record batches with retry logic and delays
+  - Only targets gaps: `WHERE player_name IS NOT NULL AND player_id IS NULL`
+  - Estimated completion: 5-10 minutes
+- **Design Decisions**:
+  - Two-pass fuzzy matching prevents duplicate player creation while achieving high match rates
+  - In-memory caching for teams/players reduces Supabase queries
+  - Batch processing with exponential backoff handles connection errors gracefully
+  - Upsert approach allows resuming/fixing without reprocessing entire dataset
+
 **Deduplication System** (Added October 2025):
 - **Team Normalization**: Handles team name variations and gender markers
   - Alias mapping (e.g., "MK Breakers" → "Milton Keynes Breakers")
