@@ -11,7 +11,9 @@ This is a Flask-based basketball statistics analysis platform that processes gam
 - Changed logging level from DEBUG to INFO for clean, readable output
 - Suppressed fuzzy player matching messages to reduce log noise
 - Fixed critical bug in `has_game_changed()` where "LiveStats URL" column name wasn't properly quoted for PostgreSQL, causing change detection to fail and re-process all games
-- Play-by-play data now properly skips unchanged games via change detection
+- **Disabled play-by-play insertion in Excel parser** to prevent hang (500+ database lookups per game)
+- Play-by-play data is now only populated by: (1) backfill script for historical data, (2) live parser for new games
+- Excel parser now processes games instantly instead of getting stuck
 
 ## User Preferences
 
