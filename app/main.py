@@ -27,23 +27,6 @@ def test_chart_data():
         {"stat": "Assists", "last_game": 4, "previous_game": 6, "average": 5}
     ])
 
-@flask_app.route("/api/parse", methods=["POST"])
-def parse_file():
-    data = request.get_json()
-
-    if not data or "file_path" not in data:
-        return {"status": "error", "message": "Missing file_path"}, 400
-
-    file_path = data["file_path"]  # e.g. "uploads/my_games.xlsx"
-    print(f"📂 Received parse request for: {file_path}")
-
-    try:
-        run_from_excel(file_path)   # 🔥 this calls your parser
-        return {"status": "ok", "file": file_path}, 200
-    except Exception as e:
-        print(f"❌ Parser failed: {e}")
-        return {"status": "error", "message": str(e)}, 500
-
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.DEBUG)
