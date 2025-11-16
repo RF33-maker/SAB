@@ -4,6 +4,15 @@
 
 This is a Flask-based basketball statistics analysis platform that processes game data from PDF box scores and Excel files, stores player statistics in Supabase, and provides AI-powered insights through OpenAI's Assistant API. The system enables users to upload game data, query player performance, analyze trends, and visualize statistics through a REST API.
 
+## Recent Changes (November 16, 2025)
+
+**Logging Cleanup & Change Detection Fix**:
+- Fixed DEBUG logging that was flooding console with HTTP request spam from httpx/httpcore/hpack libraries
+- Changed logging level from DEBUG to INFO for clean, readable output
+- Suppressed fuzzy player matching messages to reduce log noise
+- Fixed critical bug in `has_game_changed()` where "LiveStats URL" column name wasn't properly quoted for PostgreSQL, causing change detection to fail and re-process all games
+- Play-by-play data now properly skips unchanged games via change detection
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

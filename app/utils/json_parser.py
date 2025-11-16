@@ -240,12 +240,6 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
             best_match = player
             match_type = "fuzzy"
     
-    if best_match:
-        if match_type == "initial":
-            print(f"🔍 Initial match found: '{full_name}' → '{best_match['full_name']}'")
-        else:
-            print(f"🔍 Fuzzy match found: '{full_name}' → '{best_match['full_name']}' (score: {best_score:.2f})")
-    
     return best_match
 
 # ----------------------------
@@ -520,7 +514,7 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
     """
     try:
         result = supabase.table("game_schedule").select(
-            "game_key, matchtime, hometeam, awayteam, LiveStats URL, pool"
+            'game_key, matchtime, hometeam, awayteam, "LiveStats URL", pool'
         ).eq("game_key", game_key).execute()
         
         # Game doesn't exist - it's new
