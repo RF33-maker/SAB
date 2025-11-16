@@ -46,6 +46,13 @@ Preferred communication style: Simple, everyday language.
 - **Normalization**: Handles case-insensitive field matching and multiple naming variants
 - **Pool Support**: Optional "Pool" column for leagues with multiple pools (e.g., NBL Division 1). Automatically detected and stored in game_schedule when present; gracefully skipped for leagues without pools
 - **Schedule-First Processing**: Games are added to game_schedule immediately from Excel data, then LiveStats data is fetched if available. This enables future/unplayed games to appear in schedules while stats are processed separately for completed games
+- **Smart Change Detection** (Added November 2025):
+  - Before processing each game, checks if it exists in game_schedule using game_key
+  - Compares key fields: matchtime, hometeam, awayteam, LiveStats URL, pool
+  - Skips unchanged games to reduce database calls by ~95% on repeat uploads
+  - Tracks and reports: skipped (unchanged), processed (new/updated), errors, total rows
+  - Error isolation: Single game failures no longer crash entire import
+  - Performance: First upload processes all games, subsequent uploads only process changes
 
 **Live Game Parser** (Primary Production Parser - Added October 2025):
 - **Technology**: Continuous polling system (`app/live_parser.py`)

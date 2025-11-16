@@ -520,7 +520,7 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
     """
     try:
         result = supabase.table("game_schedule").select(
-            "game_key, game_datetime, home_team, away_team, LiveStats URL, Pool"
+            "game_key, matchtime, hometeam, awayteam, LiveStats URL, pool"
         ).eq("game_key", game_key).execute()
         
         # Game doesn't exist - it's new
@@ -529,27 +529,24 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
         
         existing = result.data[0]
         
-        # Compare key fields
-        # Note: game_datetime might be stored differently, so we compare just the date part
-        existing_date = existing.get("game_datetime", "")
-        if existing_date:
-            existing_date = existing_date.split("T")[0]
-        new_date = game_date.split("T")[0] if game_date else ""
-        
-        if existing_date != new_date:
+        # Compare match time (full timestamp to catch time changes)
+        existing_matchtime = existing.get("matchtime", "")
+        if existing_matchtime != game_date:
             return True
         
-        if existing.get("home_team") != home_team:
+        # Compare team names
+        if existing.get("hometeam") != home_team:
             return True
         
-        if existing.get("away_team") != away_team:
+        if existing.get("awayteam") != away_team:
             return True
         
+        # Compare LiveStats URL
         if existing.get("LiveStats URL") != livestats_url:
             return True
         
         # Compare pool (handle None/null comparison)
-        existing_pool = existing.get("Pool")
+        existing_pool = existing.get("pool")
         if (existing_pool or pool) and existing_pool != pool:
             return True
         
