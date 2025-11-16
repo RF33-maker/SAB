@@ -511,6 +511,58 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             print(f"❌ Error inserting play-by-play: {e}")
 
 # ----------------------------
+# Change Detection Helper
+# ----------------------------
+def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: str, livestats_url: str, pool: str = None) -> bool:
+    """
+    Check if a game exists in game_schedule and if any key data has changed.
+    Returns True if game is new or has changed, False if unchanged.
+    """
+    try:
+        result = supabase.table("game_schedule").select(
+            "game_key, game_datetime, home_team, away_team, LiveStats URL, Pool"
+        ).eq("game_key", game_key).execute()
+        
+        # Game doesn't exist - it's new
+        if not result.data or len(result.data) == 0:
+            return True
+        
+        existing = result.data[0]
+        
+        # Compare key fields
+        # Note: game_datetime might be stored differently, so we compare just the date part
+        existing_date = existing.get("game_datetime", "")
+        if existing_date:
+            existing_date = existing_date.split("T")[0]
+        new_date = game_date.split("T")[0] if game_date else ""
+        
+        if existing_date != new_date:
+            return True
+        
+        if existing.get("home_team") != home_team:
+            return True
+        
+        if existing.get("away_team") != away_team:
+            return True
+        
+        if existing.get("LiveStats URL") != livestats_url:
+            return True
+        
+        # Compare pool (handle None/null comparison)
+        existing_pool = existing.get("Pool")
+        if (existing_pool or pool) and existing_pool != pool:
+            return True
+        
+        # No changes detected
+        return False
+        
+    except Exception as e:
+        # If we can't check, assume it changed to be safe
+        print(f"   ⚠️ Error checking game changes: {e}")
+        return True
+
+
+# ----------------------------
 # Excel runner
 # ----------------------------
 def run_from_excel(path: str, user_id: str = None):
@@ -542,6 +594,11 @@ def run_from_excel(path: str, user_id: str = None):
     for col in required_cols:
         if col not in df.columns:
             raise ValueError(f"❌ Excel file must have a column named '{col}'.")
+
+    # Track processing stats
+    skipped_count = 0
+    processed_count = 0
+    error_count = 0
 
     for idx, row in df.iterrows():
         def safe_str(val):
@@ -603,22 +660,44 @@ def run_from_excel(path: str, user_id: str = None):
         numeric_id = url.rstrip("/").split("/")[-1]
         
         row_num = int(idx) + 1 if isinstance(idx, (int, float)) else idx
+        
+        # Check if game has changed before processing
+        if not has_game_changed(game_key, game_date, home_team_name, away_team_name, url, pool):
+            skipped_count += 1
+            print(f"⏭️  Row {row_num}: Skipping {game_key} (no changes)")
+            continue
+        
         print(f"\n➡️  Row {row_num}: {url}")
         print(f"   🎯 Extracted numeric_id: {numeric_id}")
+        
+        try:
+            parse_and_store_game(
+                numeric_id=numeric_id,
+                league_name=league_name,
+                game_date=game_date,
+                home_team_name=home_team_name,
+                away_team_name=away_team_name,
+                game_key=game_key,
+                livestats_url=url,
+                user_id=user_id,
+                pool=pool
+            )
+            processed_count += 1
+        except Exception as e:
+            error_count += 1
+            print(f"❌ Error processing row {row_num}: {e}")
+            # Continue with next game instead of failing completely
+            continue
 
-        parse_and_store_game(
-            numeric_id=numeric_id,
-            league_name=league_name,
-            game_date=game_date,
-            home_team_name=home_team_name,
-            away_team_name=away_team_name,
-            game_key=game_key,
-            livestats_url=url,
-            user_id=user_id,
-            pool=pool
-        )
-
-    print("✅ Finished parsing")
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"✅ Parsing Complete")
+    print(f"{'='*60}")
+    print(f"   Skipped (unchanged): {skipped_count}")
+    print(f"   Processed (new/updated): {processed_count}")
+    print(f"   Errors: {error_count}")
+    print(f"   Total rows: {len(df)}")
+    print(f"{'='*60}")
 
 if __name__ == "__main__":
     import sys
