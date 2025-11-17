@@ -447,12 +447,70 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
 
-    # --- Skip play-by-play insertion (handled by backfill script and live parser) ---
-    # Note: Play-by-play data is populated by:
-    #   1. backfill_pbp_optimized.py (for historical games)
-    #   2. app/live_parser.py (for new/live games)
-    # Excel parser should NOT re-insert PBP to avoid slow performance
-    print(f"⏭️  Skipping play-by-play insertion (use backfill script or live parser)")
+    # --- Smart play-by-play insertion ---
+    # Check if play-by-play data already exists for this game
+    try:
+        pbp_check = supabase.table("live_events").select("action_number", count="exact").eq("game_key", game_key).execute()
+        existing_count = pbp_check.count if pbp_check.count is not None else 0
+        
+        if existing_count > 0:
+            print(f"⏭️  Play-by-play already exists ({existing_count} events) - skipping")
+        else:
+            # No existing data - process and insert play-by-play
+            pbp = data.get("pbp", [])
+            pbp_records = []
+            for e in pbp:
+                team_id = None
+                team_name = None
+                tno = e.get("tno")
+                if tno and str(tno) in teams:
+                    team_name = teams[str(tno)].get("name")
+                    team_id = get_or_create_team(league_id, team_name, user_id)
+
+                player_id = None
+                player_name = e.get("player")
+                if player_name and team_id:
+                    player_id = get_or_create_player(player_name, team_id, e.get("shirtNumber"), team_name, league_id, user_id)
+
+                # Build score string from s1 and s2
+                s1 = e.get("s1", "")
+                s2 = e.get("s2", "")
+                score = f"{s1}-{s2}" if s1 and s2 else None
+
+                # Keep qualifiers as array
+                qualifiers = e.get("qualifier", [])
+
+                pbp_record = {
+                    "league_id": league_id,
+                    "game_key": game_key,
+                    "team_id": team_id,
+                    "player_id": player_id,
+                    "action_number": e.get("actionNumber"),
+                    "period": e.get("period"),
+                    "clock": e.get("clock"),
+                    "player_name": player_name,
+                    "team_no": tno,
+                    "action_type": e.get("actionType"),
+                    "sub_type": e.get("subType"),
+                    "qualifiers": qualifiers if qualifiers else None,
+                    "success": e.get("success"),
+                    "scoring": e.get("scoring"),
+                    "points": None,
+                    "score": score,
+                    "x_coord": None,
+                    "y_coord": None,
+                    "description": None,
+                }
+                pbp_records.append(pbp_record)
+
+            if pbp_records:
+                try:
+                    supabase.table("live_events").insert(pbp_records).execute()
+                    print(f"✅ Inserted {len(pbp_records)} play-by-play events into live_events")
+                except Exception as e:
+                    print(f"❌ Error inserting play-by-play: {e}")
+    except Exception as e:
+        print(f"⚠️  Error checking/inserting play-by-play: {e}")
 
 # ----------------------------
 # Change Detection Helper
