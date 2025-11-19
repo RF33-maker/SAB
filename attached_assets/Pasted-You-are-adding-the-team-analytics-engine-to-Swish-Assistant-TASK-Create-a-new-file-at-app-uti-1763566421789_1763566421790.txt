@@ -1,0 +1,171 @@
+You are adding the team analytics engine to Swish Assistant.
+
+TASK:
+Create a new file at: app/utils/advanced_team_stats.py
+
+This file must contain a complete set of functions to compute NBA-style advanced TEAM metrics.
+
+============================================================
+REQUIREMENTS
+============================================================
+
+1. Import supabase client:
+
+from app.utils.supabase_queries import supabase
+
+2. Include standard math safety:
+
+def safe_div(n, d):
+    return n / d if d not in (0, None) else 0
+
+3. Implement the following functions:
+
+------------------------------------------------------------
+calculate_possessions(team)
+------------------------------------------------------------
+Uses:
+FGA = team["tot_sfieldgoalsattempted"]
+FTA = team["tot_sfreethrowsattempted"]
+ORB = team["tot_sreboundsoffensive"]
+TOV = team["tot_sturnovers"]
+
+Formula:
+poss = FGA + 0.4 * FTA - ORB + TOV
+
+Return numeric value.
+
+------------------------------------------------------------
+calculate_opp_possessions(opp)
+------------------------------------------------------------
+Same formula as above, but using opponent team_stats row.
+
+------------------------------------------------------------
+calculate_off_rating(points, poss)
+------------------------------------------------------------
+Return (points / poss) * 100
+
+------------------------------------------------------------
+calculate_def_rating(opp_points, opp_poss)
+------------------------------------------------------------
+Return (opp_points / opp_poss) * 100
+
+------------------------------------------------------------
+calculate_net_rating(off, defn)
+------------------------------------------------------------
+Return off - defn
+
+------------------------------------------------------------
+calculate_pace(team_poss, opp_poss, minutes=200)
+------------------------------------------------------------
+Formula:
+pace = 40 * ((team_poss + opp_poss) / (2 * minutes))
+
+------------------------------------------------------------
+calculate_efg(team)
+------------------------------------------------------------
+FGM = team["tot_sfieldgoalsmade"]
+TPM = team["tot_sthreepointersmade"]
+FGA = team["tot_sfieldgoalsattempted"]
+
+Return (FGM + 0.5 * TPM) / FGA
+
+------------------------------------------------------------
+calculate_ts(team)
+------------------------------------------------------------
+Points = team["tot_spoints"]
+FGA = team["tot_sfieldgoalsattempted"]
+FTA = team["tot_sfreethrowsattempted"]
+
+Return Points / (2 * (FGA + 0.44 * FTA))
+
+------------------------------------------------------------
+calculate_rebound_percentages(team, opp)
+------------------------------------------------------------
+OREB% = team_ORB / (team_ORB + opp_DRB)
+DREB% = team_DRB / (team_DRB + opp_ORB)
+REB%  = team_REB / (team_REB + opp_REB)
+
+------------------------------------------------------------
+calculate_ast_percent(team)
+------------------------------------------------------------
+team_ast = team["tot_sassists"]
+team_fgm = team["tot_sfieldgoalsmade"]
+
+Return safe_div(team_ast, team_fgm)
+
+------------------------------------------------------------
+calculate_turnover_percentages(team, opp)
+------------------------------------------------------------
+Return (team_tov / team_possessions) etc. (use safe_div)
+
+------------------------------------------------------------
+calculate_scoring_distribution(team)
+------------------------------------------------------------
+Compute:
+
+Points2 = team["tot_stwopointersmade"] * 2
+Points3 = team["tot_sthreepointersmade"] * 3
+PointsFT = team["tot_sfreethrowsmade"]
+
+Total = team["tot_spoints"]
+
+Include:
+%PTS 2PT
+%PTS 3PT
+%PTS FT
+%PTS PITP
+%PTS FB
+%PTS 2ND CH
+%PTS OFF TO
+
+------------------------------------------------------------
+calculate_four_factors(team, opp)
+------------------------------------------------------------
+Return dict with:
+
+efg_percent
+ft_rate
+tov_percent
+oreb_percent
+opp_efg_percent
+opp_ft_rate
+opp_tov_percent
+opp_oreb_percent
+
+------------------------------------------------------------
+write_team_advanced_to_supabase(team_id, updated_fields)
+------------------------------------------------------------
+Use supabase.table("team_stats").update(updated_fields).eq("id", team_id).execute()
+
+------------------------------------------------------------
+fetch_team_stats_for_league(league_id)
+------------------------------------------------------------
+Fetch all rows:
+
+supabase.table("team_stats").select("*").eq("league_id", league_id).execute()
+
+Return all rows (data list).
+
+============================================================
+EXPORT A MAIN FUNCTION:
+compute_team_advanced(team_rows)
+============================================================
+This function:
+
+- Loops over each team row
+- Finds opponent (matching game_key but opposite team_id)
+- Computes ALL advanced metrics
+- Packages them into a dict
+- Calls write_team_advanced_to_supabase()
+
+============================================================
+REQUIREMENTS SUMMARY
+============================================================
+- Use only the columns we added + raw FIBA fields already in team_stats
+- Avoid ML/datatypes not present
+- The module must not run automatically — only when imported and called
+- Return no print outputs, only functions
+
+============================================================
+END OF TASK
+============================================================
