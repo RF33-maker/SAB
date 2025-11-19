@@ -1,7 +1,7 @@
 from supabase import create_client
 import os
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 def get_league_info(league_name):
     return supabase.table("leagues").select("*").ilike("name", f"%{league_name}%").execute().data
