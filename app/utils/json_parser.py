@@ -598,6 +598,7 @@ def run_from_excel(path: str, user_id: str = None):
     skipped_count = 0
     processed_count = 0
     error_count = 0
+    league_id_to_return = None
 
     for idx, row in df.iterrows():
         def safe_str(val):
@@ -606,6 +607,10 @@ def run_from_excel(path: str, user_id: str = None):
             return str(val)
         
         league_name = safe_str(row["Competition Name"])
+        
+        # Capture league_id from first row for advanced stats processing
+        if league_id_to_return is None and league_name:
+            league_id_to_return = get_or_create_league(league_name, user_id)
         
         from datetime import datetime
 
@@ -697,6 +702,8 @@ def run_from_excel(path: str, user_id: str = None):
     print(f"   Errors: {error_count}")
     print(f"   Total rows: {len(df)}")
     print(f"{'='*60}")
+    
+    return league_id_to_return
 
 if __name__ == "__main__":
     import sys
