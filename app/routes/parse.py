@@ -43,20 +43,24 @@ def handle_parse():
             
             # Compute advanced team stats if we have a league_id
             if league_id:
-                print(f"\n📊 Computing advanced team stats for league: {league_id}")
+                print(f"\n📊 Computing advanced team stats for league_id: {league_id}")
                 try:
                     team_rows = fetch_team_stats_for_league(league_id)
                     if team_rows:
-                        print(f"   Found {len(team_rows)} team stat records")
+                        print(f"   Found {len(team_rows)} team stat records for league {league_id}")
                         processed = compute_team_advanced(team_rows)
                         print(f"   ✅ Computed advanced stats for {processed} teams")
                     else:
-                        print(f"   ⚠️  No team stats found for league {league_id}")
+                        print(f"   ⚠️  No team stats found for league_id {league_id}")
+                        print(f"   This may indicate games were uploaded but team stats weren't populated")
                 except Exception as adv_err:
                     print(f"   ⚠️  Advanced stats calculation error: {adv_err}")
+                    import traceback
+                    traceback.print_exc()
                     # Don't fail the entire upload if advanced stats fail
             else:
-                print("   ⚠️  No league_id detected, skipping advanced stats")
+                print("\n⚠️  No league_id returned from Excel parser")
+                print("   Advanced stats calculation skipped - verify Excel file has 'Competition Name' column")
             
             return jsonify({
                 "status": "success",

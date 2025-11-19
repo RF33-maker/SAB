@@ -345,6 +345,9 @@ def compute_team_advanced(team_rows):
     for game_key, teams in game_dict.items():
         if len(teams) != 2:
             # Skip games without exactly 2 teams
+            print(f"   ⚠️  Skipping game '{game_key}': found {len(teams)} team records (expected 2)")
+            if len(teams) == 1:
+                print(f"      Team: {teams[0].get('team', 'unknown')}")
             continue
         
         team_a, team_b = teams[0], teams[1]
