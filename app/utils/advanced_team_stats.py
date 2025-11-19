@@ -45,11 +45,11 @@ def calculate_net_rating(off, defn):
     return off - defn
 
 
-def calculate_pace(team_poss, opp_poss, minutes=200):
+def calculate_pace(team_poss, opp_poss, minutes=40):
     """
     Calculate pace: estimated possessions per 40 minutes
     Pace = 40 * ((TeamPoss + OppPoss) / (2 * Minutes))
-    Default minutes = 200 (5 players * 40 minutes)
+    Default minutes = 40 (game duration in minutes)
     """
     return 40 * safe_div(team_poss + opp_poss, 2 * minutes)
 
@@ -146,10 +146,14 @@ def calculate_scoring_distribution(team):
     points_2nd = team.get("tot_spointssecondchance", 0) or 0
     points_off_to = team.get("tot_spointsoffturnover", 0) or 0
     
+    # Midrange points = 2PT points - Paint points (clamped to prevent negatives)
+    points_midrange = max(0, points_2pt - points_pitp)
+    
     return {
         "pts_percent_2pt": safe_div(points_2pt, total_points) * 100,
         "pts_percent_3pt": safe_div(points_3pt, total_points) * 100,
         "pts_percent_ft": safe_div(points_ft, total_points) * 100,
+        "pts_percent_midrange": safe_div(points_midrange, total_points) * 100,
         "pts_percent_pitp": safe_div(points_pitp, total_points) * 100,
         "pts_percent_fastbreak": safe_div(points_fb, total_points) * 100,
         "pts_percent_second_chance": safe_div(points_2nd, total_points) * 100,
@@ -210,6 +214,41 @@ def calculate_ast_to_ratio(team):
     assists = team.get("tot_sassists", 0) or 0
     turnovers = team.get("tot_sturnovers", 0) or 0
     return safe_div(assists, turnovers)
+
+
+def calculate_shot_distribution(team):
+    """
+    Calculate shot attempt distribution
+    Returns percentages for 2PT, 3PT, and midrange as % of total FGA
+    """
+    fga = team.get("tot_sfieldgoalsattempted", 0) or 0
+    three_pa = team.get("tot_sthreepointersattempted", 0) or 0
+    
+    # Calculate 2PA as FGA - 3PA (since FIBA may not have separate 2PA field)
+    two_pa = fga - three_pa
+    
+    # Estimate midrange: 2PT attempts minus paint attempts
+    # Approximate paint attempts from paint points (points / 2, assuming all paint shots are 2PT)
+    points_pitp = team.get("tot_spointspaint", 0) or 0
+    two_pt_made = team.get("tot_stwopointersmade", 0) or 0
+    
+    # Rough estimate: if we have paint points and 2PT made, estimate paint FGA
+    # This is approximate since we don't have direct paint attempt data
+    if two_pt_made > 0 and points_pitp > 0:
+        # Estimate paint makes from points (divide by 2)
+        paint_made_est = points_pitp / 2
+        # Estimate paint attempts (assuming similar FG% for paint and total 2PT)
+        two_pt_fg_pct = safe_div(two_pt_made, two_pa) if two_pa > 0 else 0.5
+        paint_attempts_est = safe_div(paint_made_est, two_pt_fg_pct) if two_pt_fg_pct > 0 else 0
+        midrange_attempts = max(0, two_pa - paint_attempts_est)
+    else:
+        midrange_attempts = 0
+    
+    return {
+        "fga_percent_2pt": safe_div(two_pa, fga) * 100,
+        "fga_percent_3pt": safe_div(three_pa, fga) * 100,
+        "fga_percent_midrange": safe_div(midrange_attempts, fga) * 100
+    }
 
 
 def calculate_pie(team, opp):
@@ -353,6 +392,9 @@ def process_team_vs_opponent(team, opp):
     # Scoring distribution
     scoring = calculate_scoring_distribution(team)
     
+    # Shot distribution (attempts)
+    shot_dist = calculate_shot_distribution(team)
+    
     # Four factors
     four_factors = calculate_four_factors(team, opp, team_poss, opp_poss)
     
@@ -388,10 +430,12 @@ def process_team_vs_opponent(team, opp):
         "pie": pie,
         "opp_efg_percent": four_factors["opp_efg_percent"],
         "opp_ft_rate": four_factors["opp_ft_rate"],
-        "fga_percent_2pt": safe_div((team.get("tot_stwopointersmade", 0) or 0) + (team.get("tot_stwopointersmade", 0) or 0), team.get("tot_sfieldgoalsattempted", 0) or 1) * 100,
-        "fga_percent_3pt": safe_div(team.get("tot_sthreepointersattempted", 0) or 0, team.get("tot_sfieldgoalsattempted", 0) or 1) * 100,
+        "fga_percent_2pt": shot_dist["fga_percent_2pt"],
+        "fga_percent_3pt": shot_dist["fga_percent_3pt"],
+        "fga_percent_midrange": shot_dist["fga_percent_midrange"],
         "pts_percent_2pt": scoring["pts_percent_2pt"],
         "pts_percent_3pt": scoring["pts_percent_3pt"],
+        "pts_percent_midrange": scoring["pts_percent_midrange"],
         "pts_percent_pitp": scoring["pts_percent_pitp"],
         "pts_percent_fastbreak": scoring["pts_percent_fastbreak"],
         "pts_percent_second_chance": scoring["pts_percent_second_chance"],
