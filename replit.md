@@ -35,6 +35,7 @@ The AI is instructed to use *only* the provided context, respond with exact numb
 -   **Chart Data Generation**: Calculates key statistics and compares game performance against season averages.
 -   **Game Summaries**: AI-generated summaries using "Four Factors" basketball analytics.
 -   **Advanced Team Analytics Engine**: The `app/utils/advanced_team_stats.py` module computes NBA-style advanced team metrics such as possession calculations, efficiency ratings, pace, shooting efficiency, rebounding percentages, Four Factors analysis, and PIE. These metrics are stored in `team_stats`.
+    -   **Auto-Calculation on Upload**: Advanced team stats are automatically computed when Excel files are uploaded via `/api/parse`. The workflow: (1) `run_from_excel()` processes games and returns the league_id, (2) `fetch_team_stats_for_league()` retrieves all team records for that league, (3) `compute_team_advanced()` calculates and writes 37 advanced metrics back to Supabase. Comprehensive logging tracks league detection, processing progress, and warns about skipped games (e.g., missing opponent data). Failures in advanced stats computation are non-fatal and don't break Excel uploads.
 
 ## External Dependencies
 
