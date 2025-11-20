@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from io import BytesIO
 from supabase import create_client, Client
+from app.utils.compute_advanced_stats import compute_advanced_stats
 
 # ✅ Env variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -702,6 +703,13 @@ def run_from_excel(path: str, user_id: str = None):
     print(f"   Errors: {error_count}")
     print(f"   Total rows: {len(df)}")
     print(f"{'='*60}")
+    
+    # Compute advanced stats for all games in this league
+    if league_id_to_return:
+        try:
+            compute_advanced_stats(league_id_to_return)
+        except Exception as e:
+            print("Error computing advanced stats:", e)
     
     return league_id_to_return
 
