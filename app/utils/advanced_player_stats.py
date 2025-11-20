@@ -156,6 +156,15 @@ def calc_player_tov_percent(player):
     return safe_div(tov, fga + 0.44 * fta + ast + tov) * 100
 
 
+def calc_player_ast_to_ratio(player):
+    """
+    AST/TO ratio for players.
+    """
+    ast = player.get("sassists", 0) or 0
+    tov = player.get("sturnovers", 0) or 0
+    return safe_div(ast, tov)
+
+
 def calc_player_pie(player, team_totals, opp_totals):
     """
     Calculate Player Impact Estimate
