@@ -34,9 +34,16 @@ The AI is instructed to use *only* the provided context, respond with exact numb
 ### Analytics & Visualization
 -   **Chart Data Generation**: Calculates key statistics and compares game performance against season averages.
 -   **Game Summaries**: AI-generated summaries using "Four Factors" basketball analytics.
--   **Advanced Team Analytics Engine**: The `app/utils/advanced_team_stats.py` module computes NBA-style advanced team metrics such as possession calculations, efficiency ratings, pace, shooting efficiency, rebounding percentages, Four Factors analysis, and PIE. These metrics are stored in `team_stats`.
-    -   **Auto-Calculation on Upload**: Advanced team stats are automatically computed when Excel files are uploaded via `/api/parse`. The workflow: (1) `run_from_excel()` processes games and returns the league_id, (2) `fetch_team_stats_for_league()` retrieves all team records for that league, (3) `compute_team_advanced()` calculates and writes 37 advanced metrics back to Supabase. Comprehensive logging tracks league detection, processing progress, and warns about skipped games (e.g., missing opponent data). Failures in advanced stats computation are non-fatal and don't break Excel uploads.
+-   **Advanced Team Analytics Engine**: The `app/utils/advanced_team_stats.py` module computes NBA-style advanced team metrics such as possession calculations, efficiency ratings, pace, shooting efficiency, rebounding percentages, Four Factors analysis, and PIE. These metrics are stored in `team_stats` with 37 advanced stat columns.
 -   **Advanced Player Analytics Engine**: The `app/utils/advanced_player_stats.py` module computes NBA-style advanced player metrics including Usage%, eFG%, True Shooting%, assist percentage, rebounding percentages, turnover percentage, PIE (Player Impact Estimate), estimated offensive/defensive ratings, and scoring distribution breakdowns. These metrics are stored in `player_stats` with 22 advanced stat columns. The engine requires a `team_map` data structure (mapping game_key → team_id → team_stats) to provide team and opponent context for player calculations. Minutes are converted from "MM:SS" format to decimal for accurate usage rate calculations.
+-   **Advanced Stats Coordinator**: The `app/utils/compute_advanced_stats.py` module orchestrates the complete advanced stats pipeline, ensuring correct execution order and data validation:
+    1. Computes team advanced stats first (to generate possessions data)
+    2. Re-fetches updated team stats with calculated possessions
+    3. Validates games have exactly 2 teams and both have possessions
+    4. Builds team_map context for player calculations
+    5. Computes player advanced stats using team context
+    6. Returns detailed status with processed/skipped/failure counts
+    -   **Auto-Calculation on Excel Upload**: When Excel files are uploaded via `/api/parse`, the entire advanced stats pipeline runs automatically after all games are processed. The workflow: (1) `run_from_excel()` processes all games and captures league_id, (2) `compute_advanced_stats(league_id)` runs the complete team + player analytics pipeline, (3) All 59 advanced metrics (37 team + 22 player) are written to Supabase. Comprehensive logging tracks each step, validates data integrity, and reports processing results. Failures in advanced stats computation are non-fatal and don't break Excel uploads.
 
 ## External Dependencies
 
