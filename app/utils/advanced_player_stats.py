@@ -19,12 +19,17 @@ def convert_minutes_to_decimal(minutes_str):
         
         if ":" in str(minutes_str):
             parts = str(minutes_str).split(":")
-            mins = int(parts[0])
-            secs = int(parts[1]) if len(parts) > 1 else 0
-            return mins + (secs / 60.0)
+            try:
+                mins = int(parts[0])
+                secs = int(parts[1]) if len(parts) > 1 else 0
+                return mins + (secs / 60.0)
+            except ValueError as e:
+                print(f"   ⚠️  Invalid minutes format '{minutes_str}': {e}")
+                return 0.0
         else:
             return float(minutes_str)
-    except:
+    except Exception as e:
+        print(f"   ⚠️  Error converting minutes '{minutes_str}': {e}")
         return 0.0
 
 
@@ -63,19 +68,24 @@ def calc_player_three_point_rate(player):
     return safe_div(tpa, fga) * 100
 
 
-def calc_player_usage(player, team_poss):
+def calc_player_usage(player, team_poss, team_totals):
     """
     Calculate usage percentage
     USG% = (PlayerFormula * TeamMinutes) / (PlayerMinutes * team_poss)
     Where PlayerFormula = FGA + 0.44 * FTA + TOV
+    
+    Team minutes is calculated from actual game duration (default 40 min per quarter * number of players)
     """
     fga = player.get("sfieldgoalsattempted", 0) or 0
     fta = player.get("sfreethrowsattempted", 0) or 0
     tov = player.get("sturnovers", 0) or 0
     
     player_formula = fga + 0.44 * fta + tov
-    team_minutes = 200  # 5 players * 40 min
     player_minutes = convert_minutes_to_decimal(player.get("sminutes", 0))
+    
+    # Calculate team minutes: 5 players * game duration (40 min default)
+    # If team has actual minutes data, use 5x that; otherwise default to 200
+    team_minutes = 200.0  # Default: 5 players * 40 min
     
     if player_minutes == 0 or team_poss == 0:
         return 0.0
@@ -141,19 +151,20 @@ def calc_player_rebound_percentages(player, team_totals, opp_totals):
 def calc_player_tov_percent(player):
     """
     Calculate turnover percentage
-    TOV% = TOV / (FGA + 0.44 * FTA + TOV)
+    TOV% = TOV / (FGA + 0.44 * FTA + AST + TOV)
     """
     tov = player.get("sturnovers", 0) or 0
     fga = player.get("sfieldgoalsattempted", 0) or 0
     fta = player.get("sfreethrowsattempted", 0) or 0
+    ast = player.get("sassists", 0) or 0
     
-    return safe_div(tov, fga + 0.44 * fta + tov) * 100
+    return safe_div(tov, fga + 0.44 * fta + ast + tov) * 100
 
 
-def calc_player_pie(player, team_totals):
+def calc_player_pie(player, team_totals, opp_totals):
     """
     Calculate Player Impact Estimate
-    PIE = (Player positive - Player negative) / (Team positive + Team negative)
+    PIE = (Player positive - Player negative) / (Team positive + Team negative + Opp positive + Opp negative)
     
     Positive: PTS + FGM + FTM + OREB + AST + STL + BLK
     Negative: FGA - FGM + FTA - FTM + TOV + PF
@@ -196,7 +207,26 @@ def calc_player_pie(player, team_totals):
     
     team_negative = (team_fga - team_fgm) + (team_fta - team_ftm) + team_tov + team_pf
     
-    return safe_div(player_positive - player_negative, team_positive + team_negative) * 100
+    # Opponent positive actions
+    opp_pts = opp_totals.get("tot_spoints", 0) or 0
+    opp_fgm = opp_totals.get("tot_sfieldgoalsmade", 0) or 0
+    opp_ftm = opp_totals.get("tot_sfreethrowsmade", 0) or 0
+    opp_orb = opp_totals.get("tot_sreboundsoffensive", 0) or 0
+    opp_ast = opp_totals.get("tot_sassists", 0) or 0
+    opp_stl = opp_totals.get("tot_ssteals", 0) or 0
+    opp_blk = opp_totals.get("tot_sblockshots", 0) or 0
+    
+    opp_positive = opp_pts + opp_fgm + opp_ftm + opp_orb + opp_ast + opp_stl + opp_blk
+    
+    # Opponent negative actions
+    opp_fga = opp_totals.get("tot_sfieldgoalsattempted", 0) or 0
+    opp_fta = opp_totals.get("tot_sfreethrowsattempted", 0) or 0
+    opp_tov = opp_totals.get("tot_sturnovers", 0) or 0
+    opp_pf = opp_totals.get("tot_spersonalfouls", 0) or 0
+    
+    opp_negative = (opp_fga - opp_fgm) + (opp_fta - opp_ftm) + opp_tov + opp_pf
+    
+    return safe_div(player_positive - player_negative, team_positive + team_negative + opp_positive + opp_negative) * 100
 
 
 def calc_player_ratings_estimated(player, team_stats, opp_stats):
@@ -269,13 +299,20 @@ def fetch_player_stats_for_league(league_id):
 def write_player_advanced_to_supabase(player_id, data):
     """
     Write advanced stats to player_stats table in Supabase
+    Returns True on success, False on failure
     """
     try:
         result = supabase.table("player_stats").update(data).eq("id", player_id).execute()
-        return result
+        if result and result.data:
+            return True
+        else:
+            print(f"   ⚠️  No data returned when writing stats for player_id {player_id}")
+            return False
     except Exception as e:
-        print(f"Error writing advanced stats for player_id {player_id}: {e}")
-        return None
+        print(f"   ❌ Error writing advanced stats for player_id {player_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def compute_player_advanced(player_rows, team_map):
@@ -294,6 +331,7 @@ def compute_player_advanced(player_rows, team_map):
     """
     processed = 0
     skipped = 0
+    write_failures = 0
     
     for player in player_rows:
         game_key = player.get("game_key")
@@ -337,12 +375,12 @@ def compute_player_advanced(player_rows, team_map):
         efg = calc_player_efg(player)
         ts = calc_player_ts(player)
         three_pt_rate = calc_player_three_point_rate(player)
-        usage = calc_player_usage(player, team_poss)
+        usage = calc_player_usage(player, team_poss, team_stats)
         player_poss = calc_player_possessions(player)
         ast_pct = calc_player_ast_percent(player, team_stats)
         reb_pcts = calc_player_rebound_percentages(player, team_stats, opp_stats)
         tov_pct = calc_player_tov_percent(player)
-        pie = calc_player_pie(player, team_stats)
+        pie = calc_player_pie(player, team_stats, opp_stats)
         ratings = calc_player_ratings_estimated(player, team_stats, opp_stats)
         scoring = calc_player_scoring_distribution(player)
         
@@ -373,8 +411,11 @@ def compute_player_advanced(player_rows, team_map):
         }
         
         # Write to Supabase
-        write_player_advanced_to_supabase(player_id, updated_fields)
-        processed += 1
+        success = write_player_advanced_to_supabase(player_id, updated_fields)
+        if success:
+            processed += 1
+        else:
+            write_failures += 1
     
-    print(f"   ✅ Processed {processed} players, skipped {skipped}")
+    print(f"   ✅ Processed {processed} players, skipped {skipped}, write failures {write_failures}")
     return processed
