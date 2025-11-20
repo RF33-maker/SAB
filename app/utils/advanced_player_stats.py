@@ -396,6 +396,7 @@ def compute_player_advanced(player_rows, team_map):
             "three_point_rate": three_pt_rate,
             "usage_percent": usage,
             "ast_percent": ast_pct,
+            "ast_to_ratio": calc_player_ast_to_ratio(player),
             "oreb_percent": reb_pcts["oreb_percent"],
             "dreb_percent": reb_pcts["dreb_percent"],
             "reb_percent": reb_pcts["reb_percent"],
@@ -408,7 +409,7 @@ def compute_player_advanced(player_rows, team_map):
             "pts_percent_3pt": scoring["pts_percent_3pt"],
             "pts_percent_ft": scoring["pts_percent_ft"],
             "pts_percent_midrange": scoring["pts_percent_midrange"],
-            "pts_percent_pitp": scoring["pts_percent_paint"],
+            "pts_percent_pitp": scoring["pts_percent_pitp"],
             "pts_percent_fastbreak": scoring["pts_percent_fastbreak"],
             "pts_percent_second_chance": scoring["pts_percent_second_chance"],
             "pts_percent_off_turnovers": scoring["pts_percent_off_turnovers"]
