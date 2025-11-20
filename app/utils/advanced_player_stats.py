@@ -70,28 +70,23 @@ def calc_player_three_point_rate(player):
 
 def calc_player_usage(player, team_poss, team_totals):
     """
-    Calculate usage percentage
-    USG% = (PlayerFormula * TeamMinutes) / (PlayerMinutes * team_poss)
-    Where PlayerFormula = FGA + 0.44 * FTA + TOV
-    
-    Team minutes is calculated from actual game duration (default 40 min per quarter * number of players)
+    Correct modern Usage% formula (FIBA/NBA):
+    USG% = 100 × ((FGA + 0.44 × FTA + TOV) / TeamPossessions) × (40 / PlayerMinutes)
     """
     fga = player.get("sfieldgoalsattempted", 0) or 0
     fta = player.get("sfreethrowsattempted", 0) or 0
     tov = player.get("sturnovers", 0) or 0
-    
-    player_formula = fga + 0.44 * fta + tov
+
+    # Convert minutes like "32:15" into decimal minutes
     player_minutes = convert_minutes_to_decimal(player.get("sminutes", 0))
-    
-    # Calculate team minutes: 5 players * game duration (40 min default)
-    # If team has actual minutes data, use 5x that; otherwise default to 200
-    team_minutes = 200.0  # Default: 5 players * 40 min
-    
-    if player_minutes == 0 or team_poss == 0:
+
+    if team_poss in (None, 0) or player_minutes in (None, 0):
         return 0.0
-    
-    usg = (player_formula * team_minutes) / (player_minutes * team_poss)
-    return usg * 100  # Return as percentage
+
+    player_actions = fga + 0.44 * fta + tov
+
+    usg = (player_actions / team_poss) * (40 / player_minutes) * 100
+    return usg
 
 
 def calc_player_possessions(player):
