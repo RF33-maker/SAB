@@ -386,7 +386,7 @@ def compute_player_advanced(player_rows, team_map):
         
         # Combine all fields
         updated_fields = {
-            "possessions": player_poss,
+            "player_possessions": player_poss,
             "efg_percent": efg,
             "ts_percent": ts,
             "three_point_rate": three_pt_rate,
@@ -404,7 +404,7 @@ def compute_player_advanced(player_rows, team_map):
             "pts_percent_3pt": scoring["pts_percent_3pt"],
             "pts_percent_ft": scoring["pts_percent_ft"],
             "pts_percent_midrange": scoring["pts_percent_midrange"],
-            "pts_percent_paint": scoring["pts_percent_paint"],
+            "pts_percent_pitp": scoring["pts_percent_paint"],
             "pts_percent_fastbreak": scoring["pts_percent_fastbreak"],
             "pts_percent_second_chance": scoring["pts_percent_second_chance"],
             "pts_percent_off_turnovers": scoring["pts_percent_off_turnovers"]
