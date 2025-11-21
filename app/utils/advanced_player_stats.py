@@ -263,28 +263,27 @@ def calc_player_scoring_distribution(player):
     Calculate scoring distribution percentages
     Returns breakdown of points from different sources
     """
-    pts_2pt = (player.get("stwopointersmade", 0) or 0) * 2
-    pts_3pt = (player.get("sthreepointersmade", 0) or 0) * 3
-    pts_ft = player.get("sfreethrowsmade", 0) or 0
-    total_pts = player.get("spoints", 0) or 0
-    
-    pts_paint = player.get("spointsinthepaint", 0) or 0
-    pts_fast = player.get("spointsfastbreak", 0) or 0
-    pts_2nd = player.get("spointssecondchance", 0) or 0
-    pts_off_to = player.get("spointsfromturnovers", 0) or 0
-    
-    # Midrange = 2PT points - Paint points (clamped)
-    pts_midrange = max(0, pts_2pt - pts_paint)
-    
+    pts_2pt = (player.get("stwopointersmade") or 0) * 2
+    pts_3pt = (player.get("sthreepointersmade") or 0) * 3
+    pts_ft = (player.get("sfreethrowsmade") or 0)
+
+    midrange_pts = (player.get("spointsmidrange") or 0)
+    pitp_pts = (player.get("spointsinthepaint") or 0)
+    fastbreak_pts = (player.get("spointsfastbreak") or 0)
+    second_chance_pts = (player.get("spointssecondchance") or 0)
+    off_to_pts = (player.get("spointsfromturnovers") or 0)
+
+    total_pts = player.get("spoints") or 0
+
     return {
-        "pts_percent_2pt": safe_div(pts_2pt, total_pts) * 100,
-        "pts_percent_3pt": safe_div(pts_3pt, total_pts) * 100,
-        "pts_percent_ft": safe_div(pts_ft, total_pts) * 100,
-        "pts_percent_midrange": safe_div(pts_midrange, total_pts) * 100,
-        "pts_percent_paint": safe_div(pts_paint, total_pts) * 100,
-        "pts_percent_fastbreak": safe_div(pts_fast, total_pts) * 100,
-        "pts_percent_second_chance": safe_div(pts_2nd, total_pts) * 100,
-        "pts_percent_off_turnovers": safe_div(pts_off_to, total_pts) * 100
+        "pts_percent_2pt": pts_2pt / total_pts if total_pts else 0,
+        "pts_percent_3pt": pts_3pt / total_pts if total_pts else 0,
+        "pts_percent_ft": pts_ft / total_pts if total_pts else 0,
+        "pts_percent_midrange": midrange_pts / total_pts if total_pts else 0,
+        "pts_percent_pitp": pitp_pts / total_pts if total_pts else 0,
+        "pts_percent_fastbreak": fastbreak_pts / total_pts if total_pts else 0,
+        "pts_percent_second_chance": second_chance_pts / total_pts if total_pts else 0,
+        "pts_percent_off_turnovers": off_to_pts / total_pts if total_pts else 0,
     }
 
 
