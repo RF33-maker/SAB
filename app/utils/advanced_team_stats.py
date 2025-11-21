@@ -417,6 +417,7 @@ def process_team_vs_opponent(team, opp):
     
     # Scoring distribution
     scoring = calculate_scoring_distribution(team)
+    scoring_dist = calc_team_scoring_distribution(team)
     
     # Shot distribution (attempts)
     shot_dist = calculate_shot_distribution(team)
@@ -462,10 +463,10 @@ def process_team_vs_opponent(team, opp):
         "pts_percent_2pt": scoring["pts_percent_2pt"],
         "pts_percent_3pt": scoring["pts_percent_3pt"],
         "pts_percent_midrange": scoring["pts_percent_midrange"],
-        "pts_percent_pitp": scoring["pts_percent_pitp"],
-        "pts_percent_fastbreak": scoring["pts_percent_fastbreak"],
-        "pts_percent_second_chance": scoring["pts_percent_second_chance"],
-        "pts_percent_off_turnovers": scoring["pts_percent_off_turnovers"],
+        "pts_percent_pitp": scoring_dist["pts_percent_pitp"],
+        "pts_percent_fastbreak": scoring_dist["pts_percent_fastbreak"],
+        "pts_percent_second_chance": scoring_dist["pts_percent_second_chance"],
+        "pts_percent_off_turnovers": scoring_dist["pts_percent_offturnovers"],
         "pts_percent_ft": scoring["pts_percent_ft"],
         "opp_fgm": opp_fgm,
         "opp_fga": opp_fga,
