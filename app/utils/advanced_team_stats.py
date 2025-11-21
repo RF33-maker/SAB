@@ -216,6 +216,29 @@ def calculate_ast_to_ratio(team):
     return safe_div(assists, turnovers)
 
 
+def calc_team_scoring_distribution(team):
+    """
+    Returns scoring distribution percentages for team stats.
+    %PTS PITP, %PTS OFFTO, etc.
+    """
+
+    total_pts = team.get("tot_spoints", 0) or 0
+    if total_pts == 0:
+        total_pts = 1
+
+    pts_pitp = team.get("tot_spointsinthepaint", 0) or 0
+    pts_offto = team.get("tot_spointsfromturnovers", 0) or 0
+    pts_fastbreak = team.get("tot_spointsfastbreak", 0) or 0
+    pts_second_chance = team.get("tot_spointssecondchance", 0) or 0
+
+    return {
+        "pts_percent_pitp": pts_pitp / total_pts,
+        "pts_percent_offturnovers": pts_offto / total_pts,
+        "pts_percent_fastbreak": pts_fastbreak / total_pts,
+        "pts_percent_second_chance": pts_second_chance / total_pts,
+    }
+
+
 def calculate_shot_distribution(team):
     """
     Calculate shot attempt distribution
