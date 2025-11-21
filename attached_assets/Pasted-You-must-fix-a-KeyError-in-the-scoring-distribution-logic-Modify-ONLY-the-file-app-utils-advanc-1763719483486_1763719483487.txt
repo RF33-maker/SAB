@@ -1,0 +1,51 @@
+You must fix a KeyError in the scoring distribution logic.  
+Modify ONLY the file: app/utils/advanced_player_stats.py  
+Do NOT change any other files.
+
+============================================================
+TASK: Update calc_player_scoring_distribution()
+============================================================
+
+1. Locate the function:
+
+def calc_player_scoring_distribution(player):
+
+2. Inside that function, before the return statement, ensure these variables exist:
+
+    pts_2pt = (player.get("stwopointersmade") or 0) * 2
+    pts_3pt = (player.get("sthreepointersmade") or 0) * 3
+    pts_ft = (player.get("sfreethrowsmade") or 0)
+
+    midrange_pts = (player.get("spointsmidrange") or 0)
+    pitp_pts = (player.get("spointsinthepaint") or 0)
+    fastbreak_pts = (player.get("spointsfastbreak") or 0)
+    second_chance_pts = (player.get("spointssecondchance") or 0)
+    off_to_pts = (player.get("spointsfromturnovers") or 0)
+
+    total_pts = player.get("spoints") or 0
+
+3. Replace the ENTIRE return dictionary with the following SAFE version that always includes all keys:
+
+    return {
+        "pts_percent_2pt": pts_2pt / total_pts if total_pts else 0,
+        "pts_percent_3pt": pts_3pt / total_pts if total_pts else 0,
+        "pts_percent_ft": pts_ft / total_pts if total_pts else 0,
+        "pts_percent_midrange": midrange_pts / total_pts if total_pts else 0,
+        "pts_percent_pitp": pitp_pts / total_pts if total_pts else 0,
+        "pts_percent_fastbreak": fastbreak_pts / total_pts if total_pts else 0,
+        "pts_percent_second_chance": second_chance_pts / total_pts if total_pts else 0,
+        "pts_percent_off_turnovers": off_to_pts / total_pts if total_pts else 0,
+    }
+
+============================================================
+RULES
+============================================================
+- Do NOT remove or rename the function.
+- Do NOT modify any updated_fields keys outside this function.
+- Do NOT touch any other files.
+- Maintain indentation exactly.
+- After patching, save the file and show the diff.
+
+============================================================
+END
+============================================================
