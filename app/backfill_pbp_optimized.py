@@ -167,8 +167,8 @@ def backfill_optimized():
                     "scoring": e.get("scoring"),
                     "points": None,
                     "score": score,
-                    "x_coord": None,
-                    "y_coord": None,
+                    "x_coord": e.get("x"),
+                    "y_coord": e.get("y"),
                     "description": None,
                 }
                 pbp_records.append(pbp_record)
