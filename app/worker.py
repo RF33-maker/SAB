@@ -205,12 +205,19 @@ def poll_game(game: dict):
         response = requests.get(data_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         
         if response.status_code != 200:
-            print(f"   ⏭️ HTTP {response.status_code} - keeping status as {current_status}")
-            update_data = {
-                "last_polled_at": now_iso,
-                "poll_fail_count": poll_fail_count + 1,
-                "next_poll_at": compute_next_poll(current_status, matchtime),
-            }
+            if response.status_code in (403, 404):
+                print(f"   ⏭️ HTTP {response.status_code} - game not ready yet (scheduled)")
+                update_data = {
+                    "last_polled_at": now_iso,
+                    "next_poll_at": compute_next_poll("scheduled", matchtime),
+                }
+            else:
+                print(f"   ⚠️ HTTP {response.status_code} - unexpected error")
+                update_data = {
+                    "last_polled_at": now_iso,
+                    "poll_fail_count": poll_fail_count + 1,
+                    "next_poll_at": compute_next_poll(current_status, matchtime),
+                }
             supabase.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
             return
         
