@@ -47,49 +47,79 @@ LIVESTATS_BASE = "https://fibalivestats.dcd.shared.geniussports.com/data"
 def get_due_games():
     """
     Fetch games that are due for polling.
-    Uses two queries and merges by game_key.
+    Uses multiple queries and merges by game_key.
     
-    Query A: status IN ('scheduled','live','error') 
-             AND matchtime in [now-12h, now+36h] 
-             AND next_poll_at <= now
-    
-    Query B: status='final' AND parsed_at IS NULL AND next_poll_at <= now
+    Query A1: status IN ('scheduled','live','error') AND matchtime in window AND next_poll_at <= now
+    Query A2: status IN ('scheduled','live','error') AND matchtime in window AND next_poll_at IS NULL (never polled)
+    Query B1: status='final' AND parsed_at IS NULL AND next_poll_at <= now
+    Query B2: status='final' AND parsed_at IS NULL AND next_poll_at IS NULL (never polled)
     """
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     window_start = (now - timedelta(hours=12)).isoformat()
     window_end = (now + timedelta(hours=36)).isoformat()
     
+    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at'
+    
     games_by_key = {}
     
     try:
-        result_a = (
+        result_a1 = (
             supabase.table("game_schedule")
-            .select('game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count')
+            .select(select_cols)
             .in_("status", ["scheduled", "live", "error"])
             .gte("matchtime", window_start)
             .lte("matchtime", window_end)
             .lte("next_poll_at", now_iso)
             .execute()
         )
-        for g in result_a.data or []:
+        for g in result_a1.data or []:
             games_by_key[g["game_key"]] = g
     except Exception as e:
-        print(f"⚠️ Query A failed: {e}")
+        print(f"⚠️ Query A1 failed: {e}")
     
     try:
-        result_b = (
+        result_a2 = (
             supabase.table("game_schedule")
-            .select('game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count')
+            .select(select_cols)
+            .in_("status", ["scheduled", "live", "error"])
+            .gte("matchtime", window_start)
+            .lte("matchtime", window_end)
+            .is_("next_poll_at", "null")
+            .execute()
+        )
+        for g in result_a2.data or []:
+            games_by_key[g["game_key"]] = g
+    except Exception as e:
+        print(f"⚠️ Query A2 failed: {e}")
+    
+    try:
+        result_b1 = (
+            supabase.table("game_schedule")
+            .select(select_cols)
             .eq("status", "final")
             .is_("parsed_at", "null")
             .lte("next_poll_at", now_iso)
             .execute()
         )
-        for g in result_b.data or []:
+        for g in result_b1.data or []:
             games_by_key[g["game_key"]] = g
     except Exception as e:
-        print(f"⚠️ Query B failed: {e}")
+        print(f"⚠️ Query B1 failed: {e}")
+    
+    try:
+        result_b2 = (
+            supabase.table("game_schedule")
+            .select(select_cols)
+            .eq("status", "final")
+            .is_("parsed_at", "null")
+            .is_("next_poll_at", "null")
+            .execute()
+        )
+        for g in result_b2.data or []:
+            games_by_key[g["game_key"]] = g
+    except Exception as e:
+        print(f"⚠️ Query B2 failed: {e}")
     
     return list(games_by_key.values())
 
