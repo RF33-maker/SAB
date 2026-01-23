@@ -47,8 +47,13 @@ def t(name: str) -> str:
     """Return schema-qualified table name for game data tables."""
     return f"{DB_SCHEMA}.{name}"
 
+# Live sync configuration
+ENABLE_LIVE_SYNC = os.environ.get("ENABLE_LIVE_SYNC", "true").lower() == "true"
+LIVE_SYNC_SECONDS = int(os.environ.get("LIVE_SYNC_SECONDS", "10"))
+
 print(f"DB_SCHEMA={DB_SCHEMA}")
 print(f"Writing game tables to {DB_SCHEMA}.*")
+print(f"ENABLE_LIVE_SYNC={ENABLE_LIVE_SYNC}, LIVE_SYNC_SECONDS={LIVE_SYNC_SECONDS}")
 
 POLL_INTERVAL = 10
 LIVESTATS_BASE = "https://fibalivestats.dcd.shared.geniussports.com/data"
@@ -69,7 +74,7 @@ def get_due_games():
     window_start = (now - timedelta(hours=12)).isoformat()
     window_end = (now + timedelta(hours=36)).isoformat()
     
-    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at'
+    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at, last_live_sync_at'
     
     games_by_key = {}
     
@@ -220,15 +225,39 @@ def compute_next_poll(status: str, matchtime_str: str | None) -> str | None:
     return (now + timedelta(seconds=120)).isoformat()
 
 
+def is_live_sync_due(last_live_sync_at: str | None) -> bool:
+    """Check if live sync is due based on last_live_sync_at timestamp."""
+    if not ENABLE_LIVE_SYNC:
+        return False
+    if last_live_sync_at is None:
+        return True
+    try:
+        if last_live_sync_at.endswith("Z"):
+            last_sync = datetime.fromisoformat(last_live_sync_at.replace("Z", "+00:00"))
+        else:
+            last_sync = datetime.fromisoformat(last_live_sync_at)
+        if last_sync.tzinfo is None:
+            last_sync = last_sync.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last_sync).total_seconds()
+        return elapsed >= LIVE_SYNC_SECONDS
+    except Exception:
+        return True
+
+
 def poll_game(game: dict):
     """
-    Poll a single game: fetch JSON, detect status, update DB, parse if final.
+    Poll a single game: fetch JSON, detect status, update DB, parse if needed.
+    
+    Parsing triggers:
+    - FINAL: parse once if parsed_at is null, then set parsed_at
+    - LIVE: parse every LIVE_SYNC_SECONDS if ENABLE_LIVE_SYNC, then set last_live_sync_at
     """
     game_key = game["game_key"]
     livestats_url = game.get("LiveStats URL")
     current_status = game.get("status", "scheduled")
     poll_fail_count = game.get("poll_fail_count") or 0
     matchtime = game.get("matchtime")
+    last_live_sync_at = game.get("last_live_sync_at")
     
     print(f"\n🎯 Polling: {game_key} (status: {current_status})")
     
@@ -289,8 +318,23 @@ def poll_game(game: dict):
     
     supabase.table(t("game_schedule")).update(update_data).eq("game_key", game_key).execute()
     
+    # Determine if parsing is needed (only ONE parse per poll loop)
+    should_parse = False
+    parse_reason = None
+    
     if new_status == "final" and game.get("parsed_at") is None:
-        print(f"   🔄 Parsing final game...")
+        should_parse = True
+        parse_reason = "final"
+    elif new_status == "live" and is_live_sync_due(last_live_sync_at):
+        should_parse = True
+        parse_reason = "live_sync"
+    
+    if should_parse:
+        if parse_reason == "final":
+            print(f"   🔄 Parsing final game...")
+        else:
+            print(f"   🔄 Live sync: parsing game {game_key}")
+        
         try:
             parse_and_store_game(
                 numeric_id=numeric_id,
@@ -301,10 +345,18 @@ def poll_game(game: dict):
                 game_key=game_key,
                 livestats_url=livestats_url,
             )
-            supabase.table(t("game_schedule")).update({
-                "parsed_at": now_iso,
-            }).eq("game_key", game_key).execute()
-            print(f"   ✅ Parsed and stored successfully!")
+            
+            # Update timestamp based on parse reason
+            if parse_reason == "final":
+                supabase.table(t("game_schedule")).update({
+                    "parsed_at": now_iso,
+                }).eq("game_key", game_key).execute()
+                print(f"   ✅ Final parse complete!")
+            else:
+                supabase.table(t("game_schedule")).update({
+                    "last_live_sync_at": now_iso,
+                }).eq("game_key", game_key).execute()
+                print(f"   ✅ Live sync complete!")
             
         except Exception as e:
             print(f"   ❌ Parse failed: {e}")
