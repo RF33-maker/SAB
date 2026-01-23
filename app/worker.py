@@ -160,6 +160,14 @@ def detect_game_status(data: dict, current_status: str) -> str:
     if isinstance(clock, dict):
         if clock.get("gameEnded") is True or clock.get("periodType") == "FINISHED":
             return "final"
+        
+        clock_time = clock.get("time", "")
+        clock_running = clock.get("running", True)
+        period = data.get("period", 0)
+        max_periods = data.get("periodsMax", 4)
+        if not clock_running and period >= max_periods:
+            if clock_time in ("00:00:00", "0:00:00", "00:00", "0:00", "PT0S"):
+                return "final"
     
     period_info = data.get("period")
     if period_info and isinstance(period_info, int):
@@ -171,7 +179,12 @@ def detect_game_status(data: dict, current_status: str) -> str:
     
     pbp = data.get("pbp", [])
     if pbp:
-        for event in reversed(pbp[-5:]):
+        sorted_pbp = sorted(
+            [e for e in pbp if e.get("actionNumber") is not None],
+            key=lambda e: e.get("actionNumber", 0),
+            reverse=True
+        )
+        for event in sorted_pbp[:10]:
             action_type = event.get("actionType", "")
             if action_type in ("game", "endgame"):
                 sub_type = event.get("subType", "")
