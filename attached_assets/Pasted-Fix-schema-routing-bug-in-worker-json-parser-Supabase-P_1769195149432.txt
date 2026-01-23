@@ -1,0 +1,53 @@
+Fix schema routing bug in worker + json_parser (Supabase Python client).
+
+Problem:
+We set DB_SCHEMA=test and used table names like "test.game_schedule". Supabase/PostgREST treats that as a literal table name inside the public schema (public."test.game_schedule"), causing:
+relation "public.test.game_schedule" does not exist.
+
+Goal:
+When DB_SCHEMA=test, queries must go to schema=test, table=game_schedule (not a table name containing a dot).
+
+Tasks:
+1) Remove the "schema.table" table-name approach.
+   - Stop using t(name)=f"{SCHEMA}.{name}" passed into supabase.table(...)
+
+2) Implement schema selection correctly for supabase-py (use the method supported by this repo’s installed version):
+   Option A (preferred): create schema-scoped clients using ClientOptions:
+     from supabase import create_client, ClientOptions
+
+     SCHEMA = os.getenv("DB_SCHEMA", "public")
+
+     game_db = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema=SCHEMA))
+     ref_db  = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema="public"))
+
+   Then use:
+     game_db.table("game_schedule")...
+     game_db.table("games")...
+     game_db.table("team_stats")...
+     game_db.table("player_stats")...
+     game_db.table("live_events")...
+     game_db.table("shots")...
+   And use ref_db for reference tables:
+     ref_db.table("leagues"), ref_db.table("teams"), ref_db.table("players")
+
+   Option B (if ClientOptions isn’t available): use schema() if supported:
+     game_db = supabase.schema(SCHEMA)
+     ref_db  = supabase.schema("public")
+   and then use game_db.table("game_schedule") etc.
+
+3) Apply this change in BOTH:
+   - app/worker.py: all reads/updates to game_schedule (and any other game tables) must use game_db
+   - app/utils/json_parser.py: all game-data writes/reads (games/team_stats/player_stats/live_events/shots/game_schedule) must use game_db
+   Keep leagues/teams/players reads in ref_db (public).
+
+4) Logging:
+   - On worker startup print:
+     DB_SCHEMA=<value>
+     game schema client=<value>
+     reference schema client=public
+
+5) Verify:
+   Run:
+     DB_SCHEMA=test ENABLE_LIVE_SYNC=true LIVE_SYNC_SECONDS=10 python -m app.worker
+   It should successfully query test.game_schedule and stop throwing public.test.game_schedule errors.
+   Confirm in Supabase that test.game_schedule.last_polled_at updates while public.game_schedule remains unchanged.
