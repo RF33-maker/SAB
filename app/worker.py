@@ -28,6 +28,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 
 from supabase import create_client
+from supabase.lib.client_options import ClientOptions
 
 from app.utils.json_parser import parse_and_store_game
 
@@ -38,21 +39,18 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY environment variables")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 # Schema routing for test vs production
 DB_SCHEMA = os.environ.get("DB_SCHEMA", "public")
 
-def t(name: str) -> str:
-    """Return schema-qualified table name for game data tables."""
-    return f"{DB_SCHEMA}.{name}"
+# Create schema-scoped clients
+game_db = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema=DB_SCHEMA))
 
 # Live sync configuration
 ENABLE_LIVE_SYNC = os.environ.get("ENABLE_LIVE_SYNC", "true").lower() == "true"
 LIVE_SYNC_SECONDS = int(os.environ.get("LIVE_SYNC_SECONDS", "10"))
 
 print(f"DB_SCHEMA={DB_SCHEMA}")
-print(f"Writing game tables to {DB_SCHEMA}.*")
+print(f"game schema client={DB_SCHEMA}")
 print(f"ENABLE_LIVE_SYNC={ENABLE_LIVE_SYNC}, LIVE_SYNC_SECONDS={LIVE_SYNC_SECONDS}")
 
 POLL_INTERVAL = 10
@@ -80,7 +78,7 @@ def get_due_games():
     
     try:
         result_a1 = (
-            supabase.table(t("game_schedule"))
+            game_db.table("game_schedule")
             .select(select_cols)
             .in_("status", ["scheduled", "live", "error"])
             .gte("matchtime", window_start)
@@ -95,7 +93,7 @@ def get_due_games():
     
     try:
         result_a2 = (
-            supabase.table(t("game_schedule"))
+            game_db.table("game_schedule")
             .select(select_cols)
             .in_("status", ["scheduled", "live", "error"])
             .gte("matchtime", window_start)
@@ -110,7 +108,7 @@ def get_due_games():
     
     try:
         result_b1 = (
-            supabase.table(t("game_schedule"))
+            game_db.table("game_schedule")
             .select(select_cols)
             .eq("status", "final")
             .is_("parsed_at", "null")
@@ -124,7 +122,7 @@ def get_due_games():
     
     try:
         result_b2 = (
-            supabase.table(t("game_schedule"))
+            game_db.table("game_schedule")
             .select(select_cols)
             .eq("status", "final")
             .is_("parsed_at", "null")
@@ -287,7 +285,7 @@ def poll_game(game: dict):
                     "poll_fail_count": poll_fail_count + 1,
                     "next_poll_at": compute_next_poll(current_status, matchtime),
                 }
-            supabase.table(t("game_schedule")).update(update_data).eq("game_key", game_key).execute()
+            game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
             return
         
         data = response.json()
@@ -300,7 +298,7 @@ def poll_game(game: dict):
             "status": "error" if poll_fail_count >= 2 else current_status,
             "next_poll_at": compute_next_poll("error" if poll_fail_count >= 2 else current_status, matchtime),
         }
-        supabase.table(t("game_schedule")).update(update_data).eq("game_key", game_key).execute()
+        game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
         return
     
     new_status = detect_game_status(data, current_status)
@@ -316,7 +314,7 @@ def poll_game(game: dict):
     if new_status == "final" and current_status != "final":
         update_data["final_detected_at"] = now_iso
     
-    supabase.table(t("game_schedule")).update(update_data).eq("game_key", game_key).execute()
+    game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
     
     # Determine if parsing is needed (only ONE parse per poll loop)
     should_parse = False
@@ -348,19 +346,19 @@ def poll_game(game: dict):
             
             # Update timestamp based on parse reason
             if parse_reason == "final":
-                supabase.table(t("game_schedule")).update({
+                game_db.table("game_schedule").update({
                     "parsed_at": now_iso,
                 }).eq("game_key", game_key).execute()
                 print(f"   ✅ Final parse complete!")
             else:
-                supabase.table(t("game_schedule")).update({
+                game_db.table("game_schedule").update({
                     "last_live_sync_at": now_iso,
                 }).eq("game_key", game_key).execute()
                 print(f"   ✅ Live sync complete!")
             
         except Exception as e:
             print(f"   ❌ Parse failed: {e}")
-            supabase.table(t("game_schedule")).update({
+            game_db.table("game_schedule").update({
                 "status": "error",
                 "next_poll_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
             }).eq("game_key", game_key).execute()
