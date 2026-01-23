@@ -14,6 +14,13 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Schema routing for test vs production
+DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
+
+def t(name: str) -> str:
+    """Return schema-qualified table name for game data tables."""
+    return f"{DB_SCHEMA}.{name}"
+
 # ----------------------------
 # Field Mappings
 # ----------------------------
@@ -355,7 +362,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # Add pool if present (for leagues with pools like NBL Division 1)
     if pool is not None:
         game_record["pool"] = pool
-    supabase.table("game_schedule").upsert(game_record, on_conflict="game_key").execute()
+    supabase.table(t("game_schedule")).upsert(game_record, on_conflict="game_key").execute()
     print(f"✅ Game schedule entry created for {game_key}")
 
     # --- Try to fetch LiveStats data ---
@@ -389,7 +396,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             team_record[db_key] = team.get(json_key)
         team_records.append(team_record)
 
-    insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")
+    insert_supabase(t("team_stats"), team_records, conflict_keys="identifier_duplicate")
 
     # --- Insert player stats ---
     player_records = []
@@ -422,7 +429,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     continue
 
         print(f"📊 Prepared {len(player_records)} player records for game {numeric_id}")
-        insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
+        insert_supabase(t("player_stats"), player_records, conflict_keys="identifier_duplicate")
     except Exception as e:
         print(f"❌ Failed to process player stats for game {numeric_id}: {e}")
         import traceback
@@ -446,14 +453,14 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             shot_record[db_key] = s.get(json_key)
         shot_records.append(shot_record)
 
-    insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
+    insert_supabase(t("shots"), shot_records, conflict_keys="identifier_duplicate")
 
     # --- Incremental play-by-play insertion ---
     # Query the latest action_number for this game to only insert new events
     try:
         last_action = 0
         last_action_result = (
-            supabase.table("live_events")
+            supabase.table(t("live_events"))
             .select("action_number")
             .eq("game_key", game_key)
             .order("action_number", desc=True)
@@ -528,7 +535,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             for i in range(0, total_new, CHUNK_SIZE):
                 chunk = pbp_records[i:i + CHUNK_SIZE]
                 try:
-                    supabase.table("live_events").insert(chunk).execute()
+                    supabase.table(t("live_events")).insert(chunk).execute()
                     inserted_count += len(chunk)
                     if total_new > CHUNK_SIZE:
                         print(f"   📦 Chunk {i // CHUNK_SIZE + 1}: inserted {len(chunk)} events ({inserted_count}/{total_new})")
@@ -548,7 +555,7 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
     Returns True if game is new or has changed, False if unchanged.
     """
     try:
-        result = supabase.table("game_schedule").select(
+        result = supabase.table(t("game_schedule")).select(
             'game_key, matchtime, hometeam, awayteam, "LiveStats URL", pool'
         ).eq("game_key", game_key).execute()
         
