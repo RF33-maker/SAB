@@ -448,70 +448,96 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
 
-    # --- Smart play-by-play insertion ---
-    # Check if play-by-play data already exists for this game
+    # --- Incremental play-by-play insertion ---
+    # Query the latest action_number for this game to only insert new events
     try:
-        pbp_check = supabase.table("live_events").select("action_number", count="exact").eq("game_key", game_key).execute()
-        existing_count = pbp_check.count if pbp_check.count is not None else 0
+        last_action = 0
+        last_action_result = (
+            supabase.table("live_events")
+            .select("action_number")
+            .eq("game_key", game_key)
+            .order("action_number", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if last_action_result.data and len(last_action_result.data) > 0:
+            last_action = last_action_result.data[0].get("action_number") or 0
         
-        if existing_count > 0:
-            print(f"⏭️  Play-by-play already exists ({existing_count} events) - skipping")
+        pbp = data.get("pbp", [])
+        total_events_in_json = len(pbp)
+        print(f"📊 PBP: last_action={last_action}, total_events_in_json={total_events_in_json}")
+        
+        # Filter to only new events (actionNumber > last_action)
+        pbp_records = []
+        for e in pbp:
+            action_num = e.get("actionNumber")
+            if action_num is None or action_num <= last_action:
+                continue
+            
+            team_id = None
+            team_name = None
+            tno = e.get("tno")
+            if tno and str(tno) in teams:
+                team_name = teams[str(tno)].get("name")
+                team_id = get_or_create_team(league_id, team_name, user_id)
+
+            player_id = None
+            player_name = e.get("player")
+            if player_name and team_id:
+                player_id = get_or_create_player(player_name, team_id, e.get("shirtNumber"), team_name, league_id, user_id)
+
+            # Build score string from s1 and s2
+            s1 = e.get("s1", "")
+            s2 = e.get("s2", "")
+            score = f"{s1}-{s2}" if s1 and s2 else None
+
+            # Keep qualifiers as array
+            qualifiers = e.get("qualifier", [])
+
+            pbp_record = {
+                "league_id": league_id,
+                "game_key": game_key,
+                "team_id": team_id,
+                "player_id": player_id,
+                "action_number": action_num,
+                "period": e.get("period"),
+                "clock": e.get("clock"),
+                "player_name": player_name,
+                "team_no": tno,
+                "action_type": e.get("actionType"),
+                "sub_type": e.get("subType"),
+                "qualifiers": qualifiers if qualifiers else None,
+                "success": e.get("success"),
+                "scoring": e.get("scoring"),
+                "points": None,
+                "score": score,
+                "x_coord": None,
+                "y_coord": None,
+                "description": None,
+            }
+            pbp_records.append(pbp_record)
+
+        if not pbp_records:
+            print(f"⏭️  No new play-by-play events to insert")
         else:
-            # No existing data - process and insert play-by-play
-            pbp = data.get("pbp", [])
-            pbp_records = []
-            for e in pbp:
-                team_id = None
-                team_name = None
-                tno = e.get("tno")
-                if tno and str(tno) in teams:
-                    team_name = teams[str(tno)].get("name")
-                    team_id = get_or_create_team(league_id, team_name, user_id)
-
-                player_id = None
-                player_name = e.get("player")
-                if player_name and team_id:
-                    player_id = get_or_create_player(player_name, team_id, e.get("shirtNumber"), team_name, league_id, user_id)
-
-                # Build score string from s1 and s2
-                s1 = e.get("s1", "")
-                s2 = e.get("s2", "")
-                score = f"{s1}-{s2}" if s1 and s2 else None
-
-                # Keep qualifiers as array
-                qualifiers = e.get("qualifier", [])
-
-                pbp_record = {
-                    "league_id": league_id,
-                    "game_key": game_key,
-                    "team_id": team_id,
-                    "player_id": player_id,
-                    "action_number": e.get("actionNumber"),
-                    "period": e.get("period"),
-                    "clock": e.get("clock"),
-                    "player_name": player_name,
-                    "team_no": tno,
-                    "action_type": e.get("actionType"),
-                    "sub_type": e.get("subType"),
-                    "qualifiers": qualifiers if qualifiers else None,
-                    "success": e.get("success"),
-                    "scoring": e.get("scoring"),
-                    "points": None,
-                    "score": score,
-                    "x_coord": None,
-                    "y_coord": None,
-                    "description": None,
-                }
-                pbp_records.append(pbp_record)
-
-            if pbp_records:
+            # Insert in chunks of 200 to avoid payload/timeout issues
+            CHUNK_SIZE = 200
+            total_new = len(pbp_records)
+            inserted_count = 0
+            
+            for i in range(0, total_new, CHUNK_SIZE):
+                chunk = pbp_records[i:i + CHUNK_SIZE]
                 try:
-                    supabase.table("live_events").insert(pbp_records).execute()
-                    print(f"✅ Inserted {len(pbp_records)} play-by-play events into live_events")
+                    supabase.table("live_events").insert(chunk).execute()
+                    inserted_count += len(chunk)
+                    if total_new > CHUNK_SIZE:
+                        print(f"   📦 Chunk {i // CHUNK_SIZE + 1}: inserted {len(chunk)} events ({inserted_count}/{total_new})")
                 except Exception as e:
-                    print(f"❌ Error inserting play-by-play: {e}")
+                    print(f"❌ Error inserting PBP chunk at {i}: {e}")
+            
+            print(f"✅ Inserted {inserted_count} new play-by-play events into live_events")
     except Exception as e:
-        print(f"⚠️  Error checking/inserting play-by-play: {e}")
+        print(f"⚠️  Error in play-by-play processing: {e}")
 
 # ----------------------------
 # Change Detection Helper
