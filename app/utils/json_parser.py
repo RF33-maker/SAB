@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from io import BytesIO
 from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
 from app.utils.compute_advanced_stats import compute_advanced_stats
 
 # ✅ Env variables
@@ -12,14 +13,14 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("❌ Missing SUPABASE_URL or SUPABASE_KEY in environment variables")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 # Schema routing for test vs production
 DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
 
-def t(name: str) -> str:
-    """Return schema-qualified table name for game data tables."""
-    return f"{DB_SCHEMA}.{name}"
+# Create schema-scoped clients
+# game_db: for game data tables (game_schedule, team_stats, player_stats, live_events, shots)
+# ref_db: for reference tables (leagues, teams, players) - always public
+game_db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema=DB_SCHEMA))
+ref_db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema="public"))
 
 # ----------------------------
 # Field Mappings
@@ -151,13 +152,14 @@ def build_data_url(numeric_id: str) -> str:
     return f"https://fibalivestats.dcd.shared.geniussports.com/data/{numeric_id}/data.json"
 
 def insert_supabase(table: str, records: list, conflict_keys: str):
+    """Insert game data records using game_db (respects DB_SCHEMA)."""
     if not records:
         return
     try:
-        supabase.table(table) \
+        game_db.table(table) \
             .upsert(records, on_conflict=conflict_keys) \
             .execute()
-        print(f"✅ Upserted {len(records)} into {table}")
+        print(f"✅ Upserted {len(records)} into {DB_SCHEMA}.{table}")
     except Exception as e:
         print(f"❌ Supabase upsert failed for {table}: {e}")
 
@@ -212,7 +214,7 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
     
     normalized_search = normalize_player_name(full_name)
     
-    result = supabase.table("players").select("id, full_name, shirtNumber").eq("team_id", team_id).execute()
+    result = ref_db.table("players").select("id, full_name, shirtNumber").eq("team_id", team_id).execute()
     
     if not result.data:
         return None
@@ -254,25 +256,25 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
 # Entity Get-or-Create
 # ----------------------------
 def get_or_create_league(name: str, user_id: str = None):
-    res = supabase.table("leagues").select("league_id").eq("name", name).execute()
+    res = ref_db.table("leagues").select("league_id").eq("name", name).execute()
     if res.data:
         return res.data[0]["league_id"]
     insert_data = {"name": name}
     if user_id:
         insert_data["created_by"] = user_id
-    new = supabase.table("leagues").insert(insert_data).execute()
+    new = ref_db.table("leagues").insert(insert_data).execute()
     return new.data[0]["league_id"]
 
 def get_or_create_team(league_id: str, name: str, user_id: str = None):
     normalized_name = normalize_team_name(name)
-    res = supabase.table("teams").select("team_id").eq("league_id", league_id).eq("name", normalized_name).execute()
+    res = ref_db.table("teams").select("team_id").eq("league_id", league_id).eq("name", normalized_name).execute()
     if res.data:
         return res.data[0]["team_id"]
-    new = supabase.table("teams").insert({"league_id": league_id, "name": normalized_name}).execute()
+    new = ref_db.table("teams").insert({"league_id": league_id, "name": normalized_name}).execute()
     return new.data[0]["team_id"]
 
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
-    query = supabase.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
+    query = ref_db.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
         query = query.eq("shirtNumber", shirtnumber)
     res = query.execute()
@@ -289,7 +291,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
             update_data["league_id"] = league_id
         
         if update_data:
-            supabase.table("players").update(update_data).eq("id", player_id).execute()
+            ref_db.table("players").update(update_data).eq("id", player_id).execute()
             print(f"✅ Updated player {full_name} with missing fields: {list(update_data.keys())}")
         
         return player_id
@@ -299,7 +301,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
         player_id = similar_player["id"]
         
         update_data = {}
-        existing_result = supabase.table("players").select("team_name, league_id").eq("id", player_id).execute()
+        existing_result = ref_db.table("players").select("team_name, league_id").eq("id", player_id).execute()
         if existing_result.data:
             existing_team_name = existing_result.data[0].get("team_name")
             existing_league_id = existing_result.data[0].get("league_id")
@@ -310,7 +312,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
                 update_data["league_id"] = league_id
             
             if update_data:
-                supabase.table("players").update(update_data).eq("id", player_id).execute()
+                ref_db.table("players").update(update_data).eq("id", player_id).execute()
         
         return player_id
     
@@ -324,7 +326,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
     if league_id:
         insert_data["league_id"] = league_id
     
-    new = supabase.table("players").insert(insert_data).execute()
+    new = ref_db.table("players").insert(insert_data).execute()
     return new.data[0]["id"]
 
 # ----------------------------
@@ -362,7 +364,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # Add pool if present (for leagues with pools like NBL Division 1)
     if pool is not None:
         game_record["pool"] = pool
-    supabase.table(t("game_schedule")).upsert(game_record, on_conflict="game_key").execute()
+    game_db.table("game_schedule").upsert(game_record, on_conflict="game_key").execute()
     print(f"✅ Game schedule entry created for {game_key}")
 
     # --- Try to fetch LiveStats data ---
@@ -396,7 +398,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             team_record[db_key] = team.get(json_key)
         team_records.append(team_record)
 
-    insert_supabase(t("team_stats"), team_records, conflict_keys="identifier_duplicate")
+    insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")
 
     # --- Insert player stats ---
     player_records = []
@@ -429,7 +431,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     continue
 
         print(f"📊 Prepared {len(player_records)} player records for game {numeric_id}")
-        insert_supabase(t("player_stats"), player_records, conflict_keys="identifier_duplicate")
+        insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
     except Exception as e:
         print(f"❌ Failed to process player stats for game {numeric_id}: {e}")
         import traceback
@@ -453,14 +455,14 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             shot_record[db_key] = s.get(json_key)
         shot_records.append(shot_record)
 
-    insert_supabase(t("shots"), shot_records, conflict_keys="identifier_duplicate")
+    insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
 
     # --- Incremental play-by-play insertion ---
     # Query the latest action_number for this game to only insert new events
     try:
         last_action = 0
         last_action_result = (
-            supabase.table(t("live_events"))
+            game_db.table("live_events")
             .select("action_number")
             .eq("game_key", game_key)
             .order("action_number", desc=True)
@@ -535,7 +537,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             for i in range(0, total_new, CHUNK_SIZE):
                 chunk = pbp_records[i:i + CHUNK_SIZE]
                 try:
-                    supabase.table(t("live_events")).insert(chunk).execute()
+                    game_db.table("live_events").insert(chunk).execute()
                     inserted_count += len(chunk)
                     if total_new > CHUNK_SIZE:
                         print(f"   📦 Chunk {i // CHUNK_SIZE + 1}: inserted {len(chunk)} events ({inserted_count}/{total_new})")
@@ -555,7 +557,7 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
     Returns True if game is new or has changed, False if unchanged.
     """
     try:
-        result = supabase.table(t("game_schedule")).select(
+        result = game_db.table("game_schedule").select(
             'game_key, matchtime, hometeam, awayteam, "LiveStats URL", pool'
         ).eq("game_key", game_key).execute()
         
