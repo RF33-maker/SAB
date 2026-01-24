@@ -22,6 +22,10 @@ DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
 game_db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema=DB_SCHEMA))
 ref_db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema="public"))
 
+# Backward-compatible alias for storage and any legacy references
+# Storage is not schema-specific, so ref_db works fine
+supabase = ref_db
+
 # ----------------------------
 # Field Mappings
 # ----------------------------
