@@ -26,6 +26,7 @@ import os
 import sys
 import json
 import time
+import signal
 import requests
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
@@ -61,6 +62,16 @@ print(f"ENABLE_LIVE_SYNC={ENABLE_LIVE_SYNC}, LIVE_SYNC_SECONDS={LIVE_SYNC_SECOND
 
 POLL_INTERVAL = 10
 LIVESTATS_BASE = "https://fibalivestats.dcd.shared.geniussports.com/data"
+
+_shutdown_requested = False
+
+def _handle_sigterm(signum, frame):
+    global _shutdown_requested
+    print("\n🛑 SIGTERM received — finishing current poll then shutting down...")
+    _shutdown_requested = True
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigterm)
 
 REQUEST_HEADERS = {
     "User-Agent": "SwishAssistant/1.0 (LiveStats Poller)",
@@ -492,13 +503,16 @@ def run_worker():
     print(f"Supabase URL: {SUPABASE_URL[:30]}...")
     print("=" * 60)
     
-    while True:
+    while not _shutdown_requested:
         try:
             games = get_due_games()
             
             if games:
                 print(f"\n📋 Found {len(games)} games due for polling")
                 for game in games:
+                    if _shutdown_requested:
+                        print("🛑 Shutdown requested — stopping mid-batch")
+                        break
                     try:
                         poll_game(game)
                     except Exception as e:
@@ -509,7 +523,12 @@ def run_worker():
         except Exception as e:
             print(f"\n❌ Worker loop error: {e}")
         
-        time.sleep(POLL_INTERVAL)
+        for _ in range(POLL_INTERVAL * 10):
+            if _shutdown_requested:
+                break
+            time.sleep(0.1)
+
+    print("👋 Worker shut down cleanly.")
 
 
 def run_probe():
