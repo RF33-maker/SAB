@@ -72,7 +72,7 @@ def get_due_games():
     window_start = (now - timedelta(hours=12)).isoformat()
     window_end = (now + timedelta(hours=36)).isoformat()
     
-    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at, last_live_sync_at, poll_count, total_poll_bytes'
+    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at, last_polled_at, poll_count, total_poll_bytes'
     
     games_by_key = {}
     
@@ -236,17 +236,17 @@ def compute_next_poll(status: str, matchtime_str: str | None) -> str | None:
     return (now + timedelta(seconds=120)).isoformat()
 
 
-def is_live_sync_due(last_live_sync_at: str | None) -> bool:
-    """Check if live sync is due based on last_live_sync_at timestamp."""
+def is_live_sync_due(last_polled_at: str | None) -> bool:
+    """Check if live sync is due based on last_polled_at timestamp."""
     if not ENABLE_LIVE_SYNC:
         return False
-    if last_live_sync_at is None:
+    if last_polled_at is None:
         return True
     try:
-        if last_live_sync_at.endswith("Z"):
-            last_sync = datetime.fromisoformat(last_live_sync_at.replace("Z", "+00:00"))
+        if last_polled_at.endswith("Z"):
+            last_sync = datetime.fromisoformat(last_polled_at.replace("Z", "+00:00"))
         else:
-            last_sync = datetime.fromisoformat(last_live_sync_at)
+            last_sync = datetime.fromisoformat(last_polled_at)
         if last_sync.tzinfo is None:
             last_sync = last_sync.replace(tzinfo=timezone.utc)
         elapsed = (datetime.now(timezone.utc) - last_sync).total_seconds()
@@ -261,14 +261,14 @@ def poll_game(game: dict):
     
     Parsing triggers:
     - FINAL: parse once if parsed_at is null, then set parsed_at
-    - LIVE: parse every LIVE_SYNC_SECONDS if ENABLE_LIVE_SYNC, then set last_live_sync_at
+    - LIVE: parse every LIVE_SYNC_SECONDS if ENABLE_LIVE_SYNC, based on last_polled_at
     """
     game_key = game["game_key"]
     livestats_url = game.get("LiveStats URL")
     current_status = game.get("status", "scheduled")
     poll_fail_count = game.get("poll_fail_count") or 0
     matchtime = game.get("matchtime")
-    last_live_sync_at = game.get("last_live_sync_at")
+    last_polled_at = game.get("last_polled_at")
     prev_poll_count = game.get("poll_count") or 0
     prev_total_bytes = game.get("total_poll_bytes") or 0
     
@@ -344,7 +344,7 @@ def poll_game(game: dict):
     if new_status == "final" and game.get("parsed_at") is None:
         should_parse = True
         parse_reason = "final"
-    elif new_status == "live" and is_live_sync_due(last_live_sync_at):
+    elif new_status == "live" and is_live_sync_due(last_polled_at):
         should_parse = True
         parse_reason = "live_sync"
     
@@ -372,9 +372,6 @@ def poll_game(game: dict):
                 }).eq("game_key", game_key).execute()
                 print(f"   ✅ Final parse complete!")
             else:
-                game_db.table("game_schedule").update({
-                    "last_live_sync_at": now_iso,
-                }).eq("game_key", game_key).execute()
                 print(f"   ✅ Live sync complete!")
             
         except Exception as e:
