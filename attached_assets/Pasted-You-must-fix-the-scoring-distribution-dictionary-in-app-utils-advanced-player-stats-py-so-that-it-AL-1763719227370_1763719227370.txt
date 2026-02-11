@@ -1,0 +1,53 @@
+You must fix the scoring distribution dictionary in app/utils/advanced_player_stats.py so that it ALWAYS returns all expected scoring keys.
+
+============================================================
+PATCH 1 — Modify calc_player_scoring_distribution()
+============================================================
+
+Inside app/utils/advanced_player_stats.py, locate the function:
+
+def calc_player_scoring_distribution(player):
+
+Replace the entire return dictionary with this SAFE version:
+
+    return {
+        "pts_percent_2pt": pts_2pt / total_pts if total_pts else 0,
+        "pts_percent_3pt": pts_3pt / total_pts if total_pts else 0,
+        "pts_percent_ft": pts_ft / total_pts if total_pts else 0,
+        "pts_percent_midrange": midrange_pts / total_pts if total_pts else 0,
+        "pts_percent_pitp": pitp_pts / total_pts if total_pts else 0,
+        "pts_percent_fastbreak": fastbreak_pts / total_pts if total_pts else 0,
+        "pts_percent_second_chance": second_chance_pts / total_pts if total_pts else 0,
+        "pts_percent_off_turnovers": off_to_pts / total_pts if total_pts else 0
+    }
+
+============================================================
+PATCH 2 — Add safe fallback variables BEFORE the return block
+============================================================
+
+Ensure these variables are defined safely BEFORE the return:
+
+    pts_2pt = (player.get("stwopointersmade") or 0) * 2
+    pts_3pt = (player.get("sthreepointersmade") or 0) * 3
+    pts_ft = (player.get("sfreethrowsmade") or 0)
+
+    # Advanced scoring fields (safe fallback)
+    midrange_pts = (player.get("spointsmidrange") or 0)
+    pitp_pts = (player.get("spointsinthepaint") or 0)
+    fastbreak_pts = (player.get("spointsfastbreak") or 0)
+    second_chance_pts = (player.get("spointssecondchance") or 0)
+    off_to_pts = (player.get("spointsfromturnovers") or 0)
+
+    total_pts = player.get("spoints") or 0
+
+============================================================
+RULES
+============================================================
+- DO NOT modify any other functions.
+- Do not remove existing fields.
+- Ensure calc_player_scoring_distribution ALWAYS returns all keys.
+- Keep naming consistent with updated_fields dictionary.
+
+============================================================
+END
+============================================================

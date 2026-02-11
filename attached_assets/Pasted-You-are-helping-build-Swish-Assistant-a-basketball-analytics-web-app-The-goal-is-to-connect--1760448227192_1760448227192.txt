@@ -1,0 +1,47 @@
+You are helping build "Swish Assistant" — a basketball analytics web app.
+
+The goal is to connect an OpenAI Agent (gpt-5-turbo) to Supabase data so it can answer questions and generate summaries about leagues, teams, and players.
+
+⚙️ STACK:
+- Frontend: React (chat UI + pages)
+- Backend: Flask (Python)
+- Database: Supabase (Postgres)
+- No PDFs or external documents (all data is from Supabase tables)
+
+🗄️ SUPABASE TABLES:
+- game_schedule
+- leagues
+- player_season_averages
+- player_stats
+- summaries
+- team_stats
+- teams
+
+🧩 REQUIREMENT:
+Implement a Retrieval-Augmented Generation (RAG) setup:
+1. Flask route `/api/chat`
+2. When a user asks a question, Flask retrieves data from Supabase (relevant tables).
+3. Build a structured `context` JSON from the Supabase data.
+4. Send that `context` + question to the OpenAI Agent (using `client.beta.threads.create_and_run()`).
+5. Return the agent’s grounded answer to the frontend.
+
+🧠 NOTES:
+- We are NOT fine-tuning any models.
+- The OpenAI Agent is defined in the OpenAI dashboard with system instructions like:
+  "You are Swish Assistant, an AI basketball analyst. Use the structured Supabase data in CONTEXT to answer accurately and clearly."
+- Each chat request passes the user query and relevant Supabase data to the agent.
+- RAG means: dynamic retrieval from Supabase tables + contextual generation.
+
+🎯 CURRENT TASK:
+Make sure Flask routes, Supabase queries, and the OpenAI Agent connection all work together.
+- Supabase queries should handle player, team, and league lookups.
+- Add helpers like `get_player_stats`, `get_team_stats`, `get_league_info`, etc.
+- Combine their results into a single `context` dict before sending to OpenAI.
+- The final output should be clean, natural, and factually based on the retrieved data.
+
+🏀 FUTURE IMPROVEMENTS (not yet):
+- Add automatic entity detection (decide if the user is asking about a player, team, or league).
+- Add “mode” support (Scouting, Social, Coaching tone).
+- Add caching or daily summary generation.
+
+Start by helping refine the Flask backend so the RAG flow works perfectly with Supabase and the OpenAI Agent.

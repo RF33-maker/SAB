@@ -1,0 +1,27 @@
+[📦] Full Supabase path: user-uploads/XLSX Uploads/Swish Assistant NBL D1 Womens gamelogs .xlsx
+🚀 json_parser starting...
+📂 Fetching Excel from Supabase bucket: user-uploads/XLSX Uploads/Swish Assistant NBL D1 Womens gamelogs .xlsx
+2025-09-30 13:18:48,819 - INFO - HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/storage/v1/object/user-uploads/XLSX%20Uploads/Swish%20Assistant%20NBL%20D1%20Womens%20gamelogs%20.xlsx "HTTP/2 400 Bad Request"
+🚨 Excel parse error: {'statusCode': 404, 'error': not_found, 'message': Object not found}
+Traceback (most recent call last):
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/storage3/_sync/file_api.py", line 53, in _request
+    response.raise_for_status()
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '400 Bad Request' for url 'https://omkwqpcgttrgvbhcxgqf.supabase.co/storage/v1/object/user-uploads/XLSX%20Uploads/Swish%20Assistant%20NBL%20D1%20Womens%20gamelogs%20.xlsx'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/runner/workspace/app/routes/parse.py", line 42, in handle_parse
+    run_from_excel(full_path)
+  File "/home/runner/workspace/app/utils/json_parser.py", line 328, in run_from_excel
+    res = supabase.storage.from_(bucket).download(filename)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/storage3/_sync/file_api.py", line 427, in download
+    response = self._request(
+               ^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/storage3/_sync/file_api.py", line 56, in _request
+    raise StorageApiError(resp["message"], resp["error"], resp["statusCode"])
+storage3.exceptions.StorageApiError: {'statusCode': 404, 'error': not_found, 'message': Object not found}

@@ -1,0 +1,57 @@
+You are my Replit Agent. I need to verify real bandwidth + compute requirements for my Render/VPS hosting decision for my LiveStats poller worker.
+
+Context:
+- Worker: app/worker.py
+- Poll cadence: live games every 10s (LIVE_SYNC_SECONDS=10), scheduled games every few minutes.
+- The worker fetches GeniusSports/FIBA LiveStats webcast JSON and parses/upserts team_stats, player_stats, and play-by-play (PBP) incrementally.
+- I’ve already tested an old “final” game and saw one fetch was ~569,309 bytes and the JSON had 789 PBP events.
+- Key uncertainty: am I downloading a full growing JSON blob each poll or a small delta? Is the response compressed (gzip/br) or not? This affects monthly bandwidth and hosting cost.
+
+Goal:
+Instrument the worker so we can measure:
+1) EXACT bytes downloaded per poll per game (bytes_in)
+2) Whether compression is being used (Content-Encoding header)
+3) Whether caching headers exist (ETag / Last-Modified) and if we can use them (If-None-Match / If-Modified-Since)
+4) Poll timing and parse timing (download seconds + parse seconds)
+5) Incremental behavior: how many NEW PBP events and NEW stat updates are processed per poll (events_added, stats_updates_count), and confirm last_action/last_event tracking actually works.
+
+Tasks:
+A) Find the function in app/worker.py (or helper module) that performs the HTTP request to the LiveStats webcast URL.
+B) Add logging on every request with these fields (single line log):
+   - game_key
+   - game_status (scheduled/live/final)
+   - poll_number
+   - response_status_code
+   - bytes_in = len(response.content) (or equivalent)
+   - content_encoding = response.headers.get("Content-Encoding")
+   - content_length_header = response.headers.get("Content-Length")
+   - etag = response.headers.get("ETag")
+   - last_modified = response.headers.get("Last-Modified")
+   - download_ms
+C) Add timing logs around parsing/upsert:
+   - parse_ms
+   - db_write_counts (team upserts, player upserts, pbp inserts)
+   - pbp_total_in_json
+   - pbp_new_events_added_this_poll
+   - last_action_before and last_action_after
+D) Ensure request headers include:
+   - Accept-Encoding: gzip, deflate, br
+   - Accept: application/json
+   - A reasonable User-Agent
+E) If the response contains an ETag or Last-Modified, implement conditional requests:
+   - store per-game etag/last_modified in memory or in the DB row (game_schedule table) and on next poll send If-None-Match / If-Modified-Since
+   - if 304 Not Modified, skip parsing and DB writes and log that it was a cache hit
+F) Add a “probe mode” to run without live games:
+   - env var PROBE_LIVESTATS_URL=<url> (and optionally PROBE_GAME_KEY)
+   - when set, fetch once, print the same headers/bytes/timing, then exit
+G) Provide me a short checklist on how to run the test:
+   - run probe on 2–3 old games (small/medium/large)
+   - capture logs and compute avg bytes per poll and whether gzip is on
+   - confirm whether the endpoint returns full state each time vs delta
+
+Deliverables:
+1) The exact code changes (diff or copy/paste blocks) for the logging + probe mode + conditional requests (if possible).
+2) A brief explanation of where you added it and how to run it in Replit.
+3) Example output log lines showing the new fields.
+
+Do NOT refactor unrelated parts—keep changes minimal and focused on measurement + optional caching headers support.

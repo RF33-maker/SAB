@@ -1,0 +1,82 @@
+You are now creating the coordinator engine that runs BOTH team and player advanced analytics in the correct order.
+
+TASK:
+Create a new file at:
+app/utils/compute_advanced_stats.py
+
+============================================================
+REQUIREMENTS
+============================================================
+
+IMPORTS:
+from app.utils.supabase_queries import supabase
+from app.utils.advanced_team_stats import (
+    fetch_team_stats_for_league,
+    compute_team_advanced
+)
+from app.utils.advanced_player_stats import (
+    fetch_player_stats_for_league,
+    compute_player_advanced
+)
+
+============================================================
+FUNCTION: build_team_context(team_rows)
+============================================================
+This function will create a dictionary (team_map) keyed by team_id.
+
+For each team row:
+team_map[team_id] = {
+    "team": team_row,
+    "opp": opponent_row,  # find via matching game_key with opposite team_id
+    "possessions": team_row.get("possessions"),
+    "opp_possessions": team_row.get("opp_possessions")
+}
+
+Opponent logic:
+For each team row T:
+Find opponent row O where:
+- O["game_key"] == T["game_key"]
+- O["team_id"] != T["team_id"]
+
+Add both team and opponent rows.
+
+Return team_map.
+
+============================================================
+FUNCTION: compute_advanced_stats(league_id)
+============================================================
+This is the main coordinator function.
+
+Steps:
+
+1) Fetch all team rows:
+team_rows = fetch_team_stats_for_league(league_id)
+
+2) Compute TEAM advanced stats:
+compute_team_advanced(team_rows)
+
+3) Re-fetch UPDATED team stats (to include calculated fields):
+updated_team_rows = fetch_team_stats_for_league(league_id)
+
+4) Build team_map:
+team_map = build_team_context(updated_team_rows)
+
+5) Fetch all PLAYER rows:
+player_rows = fetch_player_stats_for_league(league_id)
+
+6) Compute PLAYER advanced stats (using team_map):
+compute_player_advanced(player_rows, team_map)
+
+7) Return {"status": "success", "teams": len(team_rows), "players": len(player_rows)}
+
+============================================================
+RULES:
+============================================================
+- Do NOT modify any existing files.
+- Do NOT run anything automatically here.
+- Only define functions.
+- No prints except optional logs for debugging.
+
+============================================================
+END
+============================================================

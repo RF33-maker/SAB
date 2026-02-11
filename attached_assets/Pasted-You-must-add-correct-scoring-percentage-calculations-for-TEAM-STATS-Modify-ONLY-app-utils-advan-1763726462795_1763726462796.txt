@@ -1,0 +1,72 @@
+You must add correct scoring percentage calculations for TEAM STATS.
+
+Modify ONLY: app/utils/advanced_team_stats.py
+Do NOT change any other file.
+
+============================================================
+PATCH 1 — Create calc_team_scoring_distribution(team)
+============================================================
+
+Add this function near the other calculation helpers:
+
+def calc_team_scoring_distribution(team):
+    """
+    Returns scoring distribution percentages for team stats.
+    %PTS PITP, %PTS OFFTO, etc.
+    """
+
+    total_pts = team.get("tot_spoints", 0) or 0
+    if total_pts == 0:
+        total_pts = 1  # prevent divide by zero
+
+    pts_pitp = team.get("tot_spointsinthepaint", 0) or 0
+    pts_offto = team.get("tot_spointsfromturnovers", 0) or 0
+    pts_fastbreak = team.get("tot_spointsfastbreak", 0) or 0
+    pts_second_chance = team.get("tot_spointssecondchance", 0) or 0
+
+    return {
+        "pts_percent_pitp": pts_pitp / total_pts,
+        "pts_percent_offturnovers": pts_offto / total_pts,
+        "pts_percent_fastbreak": pts_fastbreak / total_pts,
+        "pts_percent_second_chance": pts_second_chance / total_pts,
+    }
+
+============================================================
+PATCH 2 — Add scoring percentages to updated_fields
+============================================================
+
+Inside compute_team_advanced(), locate updated_fields.
+
+Add the following fields:
+
+    scoring = calc_team_scoring_distribution(team)
+
+    updated_fields.update({
+        "pts_percent_pitp": scoring["pts_percent_pitp"],
+        "pts_percent_offturnovers": scoring["pts_percent_offturnovers"],
+        "pts_percent_fastbreak": scoring["pts_percent_fastbreak"],
+        "pts_percent_second_chance": scoring["pts_percent_second_chance"],
+    })
+
+============================================================
+RULES
+============================================================
+- Use EXACT Supabase field names:
+    tot_spointsinthepaint
+    tot_spointsfromturnovers
+    tot_spointsfastbreak
+    tot_spointssecondchance
+
+- Output new fields:
+    pts_percent_pitp
+    pts_percent_offturnovers
+    pts_percent_fastbreak
+    pts_percent_second_chance
+
+- Do NOT modify possessions or four factors.
+- Maintain indentation exactly.
+- Save file and return the diff.
+
+============================================================
+END
+============================================================

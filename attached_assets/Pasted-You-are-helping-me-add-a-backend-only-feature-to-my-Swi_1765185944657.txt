@@ -1,0 +1,116 @@
+You are helping me add a backend-only feature to my Swish Assistant project.
+
+Goal (backend only):
+Implement a backend function and data access logic that calculates how each team’s offense is distributed across its players, using existing box score stats.
+
+This is a TEAM-LEVEL metric, not the classic per-player USG%.
+
+High-level definition:
+For each team in a given league/season, I want to know:
+- How many “possessions used” each player has across all games
+- The team total “possessions used”
+- What % of the team’s offense each player is responsible for
+
+We already store the raw stats needed for this (FGA, FTA, TO). You should work entirely in the backend (Python + DB), and NOT implement any frontend changes.
+
+Math (do NOT change this logic):
+
+For each player p on team T across a season (or any sample):
+
+  player_possessions_used =
+      Σ_over_games( fga + 0.44 * fta + turnovers )
+
+For each team T:
+
+  team_possessions_used =
+      Σ_over_players_on_team( player_possessions_used )
+
+Offensive share values:
+
+  offensive_share      = player_possessions_used / team_possessions_used
+  offensive_share_pct  = 100 * player_possessions_used / team_possessions_used
+
+For each team, the sum of offensive_share_pct across all players on that team
+should be approximately 100% (allow for rounding error).
+
+Tasks:
+
+1. Find the per-game player stats table/model.
+   Likely something like `player_stats`. Identify the actual column names for:
+   - team identifier (team_id or team_name)
+   - player identifier (player_id and/or player_name)
+   - game_id
+   - fga
+   - fta
+   - turnovers
+   - league_id and/or season_id
+
+   Do NOT invent new columns; adapt to the existing schema.
+
+2. Write a SQL query (or Supabase RPC) that:
+   - Filters stats by league/season (and optionally by team if a team filter is provided).
+   - Aggregates per-player possessions used across all games in that scope:
+
+       player_possessions_used =
+         SUM(fga + 0.44 * fta + turnovers)
+
+   - Aggregates per team:
+
+       team_possessions_used =
+         SUM(player_possessions_used across players on that team)
+
+   - For each player, computes:
+
+       offensive_share      = player_possessions_used / team_possessions_used
+       offensive_share_pct  = 100 * player_possessions_used / team_possessions_used
+
+   - Returns rows with at least:
+       - team_id
+       - player_id
+       - (player_name if available)
+       - player_possessions_used
+       - team_possessions_used
+       - offensive_share
+       - offensive_share_pct
+
+   - Groups and normalises per team (NOT league-wide).
+   - Guards against division by zero (if team_possessions_used = 0, return 0 for shares).
+   - Orders results by team_id, then offensive_share DESC.
+
+3. Wrap this in a Python backend function, for example:
+
+   def get_team_offense_distribution(
+       league_id: str,
+       season_id: str,
+       team_id: str | None = None,
+   ) -> list[dict]:
+       """
+       Returns offensive distribution for:
+       - a single team (if team_id is provided), or
+       - all teams in a league/season (if team_id is None).
+       Each dict should contain:
+       - team_id
+       - player_id
+       - player_name (if available)
+       - possessions_used (player_possessions_used)
+       - team_possessions_used
+       - offensive_share
+       - offensive_share_pct
+       """
+
+   Make sure this function uses the SQL/RPC you wrote in step 2.
+
+4. Add a simple debug/test path in the backend (could be a CLI script or a temporary test function) that:
+   - Calls get_team_offense_distribution() for one known league/season and one team.
+   - Prints each player’s name and offensive_share_pct.
+   - Prints the SUM of offensive_share_pct for that team to confirm it is approximately 100%.
+
+5. Add clear comments to the new backend code explaining:
+   - This is “Team Offense Distribution” (how a team’s offense is shared across its roster).
+   - It is based on possessions used (FGA + 0.44 * FTA + TO).
+   - It is NOT the same as classic per-player Usage% (USG%).
+   - It is meant to support teamwork / offensive balance analysis and will be consumed by the frontend later for visualisation.
+
+6. Do NOT add any frontend code in this task. Only backend: SQL/RPC + Python function + simple debug/test.
+
+Preserve existing project style and structure. If you need to refactor existing possession logic from the OFF Rating/DEF Rating code into a shared helper, do so carefully and ensure no regressions.

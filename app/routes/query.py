@@ -13,7 +13,7 @@ from app.utils.chat_data import supabase
 from flask_cors import CORS
 from threading import Thread
 from app.utils.chat_functions import create_assistant, store_player_data
-from app.utils.voiceflow_tools import get_player_stats, get_top_players, get_game_summary, get_team_analysis, get_advanced_insights
+from app.utils.rag_utils import build_rag_context
 from openai.types.chat import ChatCompletionMessageParam
 
 # Blueprint setup
@@ -55,6 +55,10 @@ def reset_thread():
 @query_bp.route('/chat', methods=['POST'])
 @limiter.limit("60 per minute")
 def chat():
+    """
+    RAG-based chat endpoint
+    Fetches relevant context from Supabase and sends it to OpenAI Agent
+    """
     try:
         data = request.json
         if not data:
@@ -62,103 +66,67 @@ def chat():
 
         thread_id = data.get('thread_id')
         user_input = data.get('message', '')
-        chat_mode = data.get('chatMode', 'general')
+        league_id = data.get('league_id')
         player_name = data.get('player_name')
 
-        logging.warning(f"📦 Incoming POST: {data}")
-        logging.warning(f"🎯 Extracted player name: {player_name}")
+        logging.info(f"📦 RAG Chat Request: question='{user_input}', league_id={league_id}, player_name={player_name}")
 
-        # Submit user message to thread
+        # Create thread if not provided
+        if not thread_id:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            logging.info(f"🆕 Created new thread: {thread_id}")
+
+        # Build RAG context from Supabase
+        context = build_rag_context(user_input, league_id=league_id, player_name=player_name)
+        
+        logging.info(f"📊 Built context type: {context.get('type')}")
+
+        # Format context as a structured message
+        context_message = f"""
+CONTEXT DATA FROM DATABASE:
+{json.dumps(context, indent=2, default=str)}
+
+USER QUESTION: {user_input}
+
+Please answer the question using ONLY the data provided in the CONTEXT above. 
+Be specific with numbers and stats. If the data doesn't contain the answer, say so.
+"""
+
+        # Submit context + question to thread
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
-            content=user_input
+            content=context_message
         )
 
-        # Let OpenAI Assistant handle tool use
+        # Run the assistant (no tool calling needed)
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=assistant_id
         )
 
-        # If Assistant wants to call a tool
-        if run.status == "requires_action" and run.required_action:
-            tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
-            tool_name = tool_call.function.name
-            args = json.loads(tool_call.function.arguments)
-
-            if tool_name == "get_player_stats":
-                response = asyncio.run(get_player_stats(**args))
-
-                if isinstance(response, tuple):
-                    raw_output, records = response
-                    store_player_data(thread_id, args.get("player_name"), records)
-                else:
-                    raw_output = response
-                    
-            elif tool_name == "get_top_players":
-                raw_output = asyncio.run(get_top_players(**args))
+        # Get the assistant's response
+        if run.status == "completed":
+            messages = client.beta.threads.messages.list(thread_id=thread_id, limit=1)
+            if messages.data and messages.data[0].content:
+                content_block = messages.data[0].content[0]
+                # Safely extract text content
+                assistant_message = content_block.text.value if hasattr(content_block, 'text') else str(content_block)
                 
-            elif tool_name == "get_game_summary":
-                raw_output = asyncio.run(get_game_summary(**args))
+                logging.info(f"✅ RAG response generated successfully")
                 
-            elif tool_name == "get_team_analysis":
-                raw_output = asyncio.run(get_team_analysis(**args))
-                
-            elif tool_name == "get_advanced_insights":
-                raw_output = asyncio.run(get_advanced_insights(**args))
-
-                # Start GPT summary thread (optional)
-                def run_gpt_summary():
-                    try:
-                        logging.warning("🧠 Starting GPT summary thread...")
-                        logging.warning(f"🧾 Prompt to GPT:\n{raw_output}")
-
-                        ai_summary = client.chat.completions.create(
-                            model="gpt-3.5-turbo-1106",
-                            temperature=0.9,
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": """
-        You are a basketball scout. Given the player's stat summary, return a structured scouting report with:
-        1. Player Name + Headline
-        2. Key Stats (bullets)
-        3. Strengths
-        4. Weaknesses
-        5. Summary (1 short paragraph)
-        6. How to Defend (with disclaimer: 'Use this as a guide. You know your team best.')
-        """
-                                },
-                                {"role": "user", "content": raw_output}
-                            ]
-                        )
-
-                        result = ai_summary.choices[0].message.content
-                        ai_summaries[thread_id] = result
-                        logging.warning("✅ GPT summary generated successfully.")
-                        logging.warning(result)
-
-                    except Exception as e:
-                        logging.error("❌ GPT summary failed:", exc_info=True)
-                        ai_summaries[thread_id] = f"⚠️ Error generating full summary: {str(e)}"
-
-                Thread(target=run_gpt_summary).start()
-
                 return jsonify({
-                    "response": raw_output,
+                    "response": assistant_message,
                     "thread_id": thread_id,
-                    "gpt_status": "processing"
+                    "context_type": context.get('type')
                 })
-            else:
-                # For other tools, return the response directly
-                return jsonify({
-                    "response": raw_output,
-                    "thread_id": thread_id
-                })
-
-        # If nothing useful happened
-        return jsonify({"error": "❌ No tool call triggered."}), 400
+        
+        # Handle other statuses
+        return jsonify({
+            "error": f"Assistant run failed with status: {run.status}",
+            "thread_id": thread_id
+        }), 500
 
     except Exception as e:
         logging.error("❌ Error in /chat route:", exc_info=True)
@@ -170,6 +138,9 @@ def chat():
 def check_summary():
     try:
         data = request.json
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
         thread_id = data.get('thread_id')
 
         if not thread_id:
@@ -189,34 +160,53 @@ def check_summary():
 @query_bp.route('/api/chat/league', methods=['POST'])
 @limiter.limit("60 per minute")
 def chat_league():
-    """Handle league-specific chat requests"""
+    """
+    League-specific RAG chat endpoint
+    Redirects to main chat endpoint with league context
+    """
     try:
         data = request.json
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
 
-        # Extract parameters - handle both 'message' and 'question' for compatibility
+        # Extract and normalize parameters
         thread_id = data.get('thread_id')
         user_input = data.get('message', '') or data.get('question', '')
         league_id = data.get('league_id')
         player_name = data.get('player_name')
         
-        # If no thread_id provided, create a new thread
-        if not thread_id:
-            thread = client.beta.threads.create()
-            thread_id = thread.id
-            logging.warning(f"🆕 Created new thread: {thread_id}")
-
         if not league_id:
             return jsonify({"error": "league_id is required"}), 400
 
-        logging.warning(f"📦 League chat request: {data}")
+        logging.info(f"📦 League RAG Chat: question='{user_input}', league_id={league_id}")
 
-        # Submit user message to thread
+        # Create thread if not provided
+        if not thread_id:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            logging.info(f"🆕 Created new thread: {thread_id}")
+
+        # Build RAG context with league filter
+        context = build_rag_context(user_input, league_id=league_id, player_name=player_name)
+        
+        logging.info(f"📊 Built context type: {context.get('type')}")
+
+        # Format context message
+        context_message = f"""
+CONTEXT DATA FROM DATABASE (League: {league_id}):
+{json.dumps(context, indent=2, default=str)}
+
+USER QUESTION: {user_input}
+
+Please answer the question using ONLY the data provided in the CONTEXT above. 
+Be specific with numbers and stats. If the data doesn't contain the answer, say so.
+"""
+
+        # Submit to thread
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
-            content=user_input
+            content=context_message
         )
 
         # Run assistant
@@ -225,59 +215,27 @@ def chat_league():
             assistant_id=assistant_id
         )
 
-        # Handle tool calls (same logic as /chat route)
-        if run.status == "requires_action" and run.required_action:
-            tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
-            tool_name = tool_call.function.name
-            args = json.loads(tool_call.function.arguments)
-
-            # Add league_id to args if not present
-            if 'league_id' not in args:
-                args['league_id'] = league_id
-
-            if tool_name == "get_player_stats":
-                response = asyncio.run(get_player_stats(**args))
-                if isinstance(response, tuple):
-                    raw_output, records = response
-                    store_player_data(thread_id, args.get("player_name"), records)
-                else:
-                    raw_output = response
-                    
-            elif tool_name == "get_top_players":
-                raw_output = asyncio.run(get_top_players(**args))
+        # Get response
+        if run.status == "completed":
+            messages = client.beta.threads.messages.list(thread_id=thread_id, limit=1)
+            if messages.data and messages.data[0].content:
+                content_block = messages.data[0].content[0]
+                # Safely extract text content
+                assistant_message = content_block.text.value if hasattr(content_block, 'text') else str(content_block)
                 
-            elif tool_name == "get_game_summary":
-                raw_output = asyncio.run(get_game_summary(**args))
+                logging.info(f"✅ League RAG response generated")
                 
-            elif tool_name == "get_team_analysis":
-                raw_output = asyncio.run(get_team_analysis(**args))
-                
-            elif tool_name == "get_advanced_insights":
-                raw_output = asyncio.run(get_advanced_insights(**args))
-            else:
-                raw_output = "Tool not recognized"
-
-            # Submit tool output
-            client.beta.threads.runs.submit_tool_outputs(
-                thread_id=thread_id,
-                run_id=run.id,
-                tool_outputs=[{
-                    "tool_call_id": tool_call.id,
-                    "output": str(raw_output)
-                }]
-            )
-
-            # Get final response
-            run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
-            messages = client.beta.threads.messages.list(thread_id=thread_id)
-            
-            return jsonify({
-                "response": raw_output,
-                "thread_id": thread_id,
-                "league_id": league_id
-            })
-
-        return jsonify({"error": "❌ No tool call triggered."}), 400
+                return jsonify({
+                    "response": assistant_message,
+                    "thread_id": thread_id,
+                    "league_id": league_id,
+                    "context_type": context.get('type')
+                })
+        
+        return jsonify({
+            "error": f"Assistant run failed with status: {run.status}",
+            "thread_id": thread_id
+        }), 500
 
     except Exception as e:
         logging.error("❌ Error in /api/chat/league route:", exc_info=True)

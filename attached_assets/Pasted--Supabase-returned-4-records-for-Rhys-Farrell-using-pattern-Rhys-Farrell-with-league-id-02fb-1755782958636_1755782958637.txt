@@ -1,0 +1,21 @@
+✅ Supabase returned 4 records for 'Rhys Farrell' using pattern '%Rhys Farrell%' with league_id '02fbd7a1-c160-42aa-9017-e7197b85975b'
+📦 Records retrieved for Rhys Farrell (league: 02fbd7a1-c160-42aa-9017-e7197b85975b): 4 records found
+🧾 Auto-generated stat_list for Rhys Farrell: ['points', 'rebounds_total', 'assists', 'steals', 'blocks', 'turnovers', 'field_goals_made', 'field_goals_attempted', 'field_goal_percent', 'three_pt_made', 'three_pt_attempted', 'three_pt_percent', 'free_throws_made', 'free_throws_attempted', 'free_throw_percent', 'plus_minus']
+🧪 Processing stat: points → points
+🧪 Processing stat: rebounds_total → rebounds_total
+🧪 Processing stat: assists → assists
+🧪 Processing stat: steals → steals
+🧪 Processing stat: blocks → blocks
+🧪 Processing stat: turnovers → turnovers
+🧪 Processing stat: field_goals_made → field_goals_made
+🧪 Processing stat: field_goals_attempted → field_goals_attempted
+🧪 Processing stat: field_goal_percent → field_goal_percent
+🧪 Processing stat: three_pt_made → 3_pt_made
+🧪 Processing stat: three_pt_attempted → 3_pt_attempted
+🧪 Processing stat: three_pt_percent → 3_pt_percent
+🧪 Processing stat: free_throws_made → free_throws_made
+🧪 Processing stat: free_throws_attempted → free_throws_attempted
+🧪 Processing stat: free_throw_percent → free_throw_percent
+🧪 Processing stat: plus_minus → plus_minus
+WARNING:root:✅ Tool get_player_stats returned: Rhys Farrell is struggling and in a downward trend. In his latest game, he scored 12 points on 4/15 shooting (26.7%), hit 2/11 from three (18.2%), grabbed 2 rebounds, and dished out 1 assists with 2 t...
+DEBUG:openai._base_client:Request options: {'method': 'post', 'url': '/threads/thread_pCj5tQTSueH5PgLGsuKl04n0/runs/run_2sJ63o8J4bY6xTFnTrIgFQyx/submit_tool_outputs', 'headers': {'OpenAI-Beta': 'assistants=v2'}, 'files': None, 'idempotency_key': 'stainless-python-retry-fe83a96a-83b7-40a8-b149-d57a5615616f', 'json_data': {'tool_outputs': [{'tool_call_id': 'call_NXax3ANPE5BjWn0bEzbdCpqN', 'output': 'Rhys Farrell is struggling and in a downward trend. In his latest game, he scored 12 points on 4/15 shooting (26.7%), hit 2/11 from three (18.2%), grabbed 2 rebounds, and dished out 1 assists with 2 turnovers. His impact was poor with a -12 plus/minus. Analysis: He needs to improve his shot selection and efficiency, and his three-point shooting needs work, he needs to take better care of the ball, the team struggled when he was on the court.'}], 'stream': False}}

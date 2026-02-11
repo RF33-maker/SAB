@@ -1,0 +1,77 @@
+You are working in my existing backend repo (Python). Goal: create an MVP background worker that polls FIBA LiveStats games and triggers my existing JSON parsing + Supabase upserts when a game is finished.
+
+Context / Requirements:
+- Supabase table: public.game_schedule
+- Columns:
+  competitionname (text)
+  matchtime (timestamptz)
+  hometeam (text)
+  awayteam (text)
+  game_key (text, NOT NULL)
+  "LiveStats URL" (text)  <-- note the column name has a space
+  league_id (uuid)
+  home_team_id (uuid)
+  away_team_id (uuid)
+  pool (text)
+  status (text default 'scheduled')
+  parsed_at (timestamptz)
+  last_polled_at (timestamptz)
+  poll_fail_count (int default 0)
+  next_poll_at (timestamptz)
+  final_detected_at (timestamptz)
+
+- I have an existing JSON parser module in this repo that:
+  1) builds the FIBA LiveStats data.json URL from numeric_id (last path segment of LiveStats URL),
+  2) parses the JSON, and
+  3) upserts game/team/player/shots/pbp into Supabase.
+  It likely has a main function similar to parse_and_store_game(...) or equivalent. Find and use it. Do NOT use the old PDF parser.
+
+What to build:
+1) Add a new file worker.py at the backend root (or a sensible location) that runs as a long-running loop.
+2) The worker must:
+   - Fetch “due games” from game_schedule:
+     A) status IN ('scheduled','live','error') AND matchtime in [now-12h, now+36h] AND next_poll_at <= now
+     B) OR (status='final' AND parsed_at IS NULL AND next_poll_at <= now)
+     Use two Supabase queries and merge/dedupe by game_key (simpler than complex OR filter).
+   - For each due game:
+     - Read the LiveStats URL from the column "LiveStats URL".
+     - Extract numeric_id from the URL (last segment after final slash).
+     - GET https://fibalivestats.dcd.shared.geniussports.com/data/{numeric_id}/data.json with timeout.
+     - Infer status:
+        * If response not 200 -> treat as scheduled (unless currently live/error).
+        * If JSON contains a clear final indicator -> final.
+        * Otherwise if play-by-play exists -> live.
+        * Else -> scheduled.
+       Keep this robust: check multiple likely fields + fallback to pbp existence.
+     - Update the game_schedule row with:
+        status, last_polled_at=now, poll_fail_count (increment on failure else reset),
+        final_detected_at if status becomes final and it was null,
+        next_poll_at computed by cadence below.
+     - Cadence MVP:
+        scheduled -> now + 120s (or if matchtime is far away, can be 15m/2m)
+        live -> now + 15s
+        error -> now + 300s
+        final -> next_poll_at = NULL (stop polling)
+     - If status == 'final' AND parsed_at IS NULL:
+        call the existing JSON parser’s function to parse and store this game in Supabase.
+        On success set parsed_at=now.
+        On failure set status='error' and next_poll_at=now+5m.
+
+3) The worker must use env vars for Supabase:
+   - SUPABASE_URL
+   - SUPABASE_KEY (service role key in production)
+   Use supabase-py create_client.
+
+4) Add/update requirements.txt if needed (requests, supabase).
+5) Add clear logging prints so Render logs show progress.
+
+Deliverable:
+- Create worker.py
+- Ensure it imports and calls the correct existing JSON parsing function from this repo (find actual module path and function signature and wire it correctly).
+- Ensure worker.py can run locally via `python worker.py` without crashing.
+
+After implementation:
+- Provide me a short note in comments or a README snippet explaining:
+  - how to run locally
+  - what env vars are required
+  - what Render worker start command should be
