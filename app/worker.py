@@ -72,7 +72,7 @@ def get_due_games():
     window_start = (now - timedelta(hours=12)).isoformat()
     window_end = (now + timedelta(hours=36)).isoformat()
     
-    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at, last_live_sync_at'
+    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at, last_live_sync_at, poll_count, total_poll_bytes'
     
     games_by_key = {}
     
@@ -269,6 +269,8 @@ def poll_game(game: dict):
     poll_fail_count = game.get("poll_fail_count") or 0
     matchtime = game.get("matchtime")
     last_live_sync_at = game.get("last_live_sync_at")
+    prev_poll_count = game.get("poll_count") or 0
+    prev_total_bytes = game.get("total_poll_bytes") or 0
     
     print(f"\n🎯 Polling: {game_key} (status: {current_status})")
     
@@ -302,6 +304,7 @@ def poll_game(game: dict):
             return
         
         data = response.json()
+        response_bytes = len(response.content)
         
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
@@ -315,13 +318,18 @@ def poll_game(game: dict):
         return
     
     new_status = detect_game_status(data, current_status)
-    print(f"   📊 Detected status: {new_status}")
+    new_poll_count = prev_poll_count + 1
+    new_total_bytes = prev_total_bytes + response_bytes
+    print(f"   📊 Detected status: {new_status} | poll #{new_poll_count} | {response_bytes:,} bytes (total: {new_total_bytes:,})")
     
     update_data = {
         "status": new_status,
         "last_polled_at": now_iso,
         "poll_fail_count": 0,
         "next_poll_at": compute_next_poll(new_status, matchtime),
+        "poll_count": new_poll_count,
+        "poll_bytes_recent": response_bytes,
+        "total_poll_bytes": new_total_bytes,
     }
     
     if new_status == "final" and current_status != "final":
