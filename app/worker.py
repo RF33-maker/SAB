@@ -23,9 +23,12 @@ Polling cadence:
 """
 
 import os
+import sys
+import json
 import time
 import requests
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 
 from supabase import create_client
 from supabase.lib.client_options import ClientOptions
@@ -36,16 +39,19 @@ from app.utils.json_parser import parse_and_store_game
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
+PROBE_URL = os.environ.get("PROBE_LIVESTATS_URL")
+
+if PROBE_URL:
+    print("🔬 PROBE MODE — will fetch once and exit, no DB required")
+elif not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY environment variables")
 
-# Schema routing for test vs production
 DB_SCHEMA = os.environ.get("DB_SCHEMA", "public")
 
-# Create schema-scoped clients
-game_db = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema=DB_SCHEMA))
+game_db = None
+if not PROBE_URL:
+    game_db = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema=DB_SCHEMA))
 
-# Live sync configuration
 ENABLE_LIVE_SYNC = os.environ.get("ENABLE_LIVE_SYNC", "true").lower() == "true"
 LIVE_SYNC_SECONDS = int(os.environ.get("LIVE_SYNC_SECONDS", "10"))
 
@@ -55,6 +61,15 @@ print(f"ENABLE_LIVE_SYNC={ENABLE_LIVE_SYNC}, LIVE_SYNC_SECONDS={LIVE_SYNC_SECOND
 
 POLL_INTERVAL = 10
 LIVESTATS_BASE = "https://fibalivestats.dcd.shared.geniussports.com/data"
+
+REQUEST_HEADERS = {
+    "User-Agent": "SwishAssistant/1.0 (LiveStats Poller)",
+    "Accept": "application/json",
+    "Accept-Encoding": "gzip, deflate, br",
+}
+
+_etag_cache: dict[str, str] = {}
+_last_modified_cache: dict[str, str] = {}
 
 
 def get_due_games():
@@ -255,6 +270,79 @@ def is_live_sync_due(last_polled_at: str | None) -> bool:
         return True
 
 
+def fetch_livestats_json(data_url: str, game_key: str = "probe"):
+    """
+    Fetch LiveStats JSON with instrumentation.
+    Returns (response, data, metrics) or raises on failure.
+    metrics dict has: bytes_in, download_ms, content_encoding, content_length,
+                      etag, last_modified, cache_hit, pbp_total
+    """
+    headers = dict(REQUEST_HEADERS)
+
+    cached_etag = _etag_cache.get(game_key)
+    cached_lm = _last_modified_cache.get(game_key)
+    if cached_etag:
+        headers["If-None-Match"] = cached_etag
+    if cached_lm:
+        headers["If-Modified-Since"] = cached_lm
+
+    t0 = perf_counter()
+    response = requests.get(data_url, timeout=15, headers=headers)
+    download_ms = round((perf_counter() - t0) * 1000, 1)
+
+    content_encoding = response.headers.get("Content-Encoding", "none")
+    content_length = response.headers.get("Content-Length", "n/a")
+    etag = response.headers.get("ETag")
+    last_modified = response.headers.get("Last-Modified")
+
+    if etag:
+        _etag_cache[game_key] = etag
+    if last_modified:
+        _last_modified_cache[game_key] = last_modified
+
+    metrics = {
+        "status_code": response.status_code,
+        "bytes_in": len(response.content),
+        "download_ms": download_ms,
+        "content_encoding": content_encoding,
+        "content_length": content_length,
+        "etag": etag or "none",
+        "last_modified": last_modified or "none",
+        "cache_hit": response.status_code == 304,
+    }
+
+    if response.status_code == 304:
+        return response, None, metrics
+
+    data = response.json() if response.status_code == 200 else None
+    if data:
+        metrics["pbp_total"] = len(data.get("pbp", []))
+    return response, data, metrics
+
+
+def log_poll_metrics(game_key: str, game_status: str, poll_number: int, metrics: dict, parse_info: dict | None = None):
+    """Print a single structured log line with all poll metrics."""
+    parts = [
+        f"game_key={game_key}",
+        f"status={game_status}",
+        f"poll={poll_number}",
+        f"http={metrics['status_code']}",
+        f"bytes_in={metrics['bytes_in']:,}",
+        f"dl_ms={metrics['download_ms']}",
+        f"encoding={metrics['content_encoding']}",
+        f"content_length={metrics['content_length']}",
+        f"etag={metrics['etag']}",
+        f"last_modified={metrics['last_modified']}",
+        f"cache_hit={metrics['cache_hit']}",
+    ]
+    if parse_info:
+        parts.extend([
+            f"parse_ms={parse_info.get('parse_ms', 'n/a')}",
+            f"pbp_total={parse_info.get('pbp_total', 'n/a')}",
+        ])
+    print(f"   📈 POLL_LOG | {' | '.join(parts)}")
+
+
 def poll_game(game: dict):
     """
     Poll a single game: fetch JSON, detect status, update DB, parse if needed.
@@ -284,7 +372,20 @@ def poll_game(game: dict):
     now_iso = datetime.now(timezone.utc).isoformat()
     
     try:
-        response = requests.get(data_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        response, data, metrics = fetch_livestats_json(data_url, game_key)
+        response_bytes = metrics["bytes_in"]
+        new_poll_count = prev_poll_count + 1
+
+        if metrics["cache_hit"]:
+            log_poll_metrics(game_key, current_status, new_poll_count, metrics)
+            print(f"   ⚡ 304 Not Modified — skipping parse")
+            game_db.table("game_schedule").update({
+                "last_polled_at": now_iso,
+                "poll_count": new_poll_count,
+                "poll_bytes_recent": 0,
+                "next_poll_at": compute_next_poll(current_status, matchtime),
+            }).eq("game_key", game_key).execute()
+            return
         
         if response.status_code != 200:
             if response.status_code in (403, 404):
@@ -303,9 +404,6 @@ def poll_game(game: dict):
             game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
             return
         
-        data = response.json()
-        response_bytes = len(response.content)
-        
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
         update_data = {
@@ -318,9 +416,9 @@ def poll_game(game: dict):
         return
     
     new_status = detect_game_status(data, current_status)
-    new_poll_count = prev_poll_count + 1
     new_total_bytes = prev_total_bytes + response_bytes
-    print(f"   📊 Detected status: {new_status} | poll #{new_poll_count} | {response_bytes:,} bytes (total: {new_total_bytes:,})")
+
+    log_poll_metrics(game_key, new_status, new_poll_count, metrics)
     
     update_data = {
         "status": new_status,
@@ -337,7 +435,6 @@ def poll_game(game: dict):
     
     game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
     
-    # Determine if parsing is needed (only ONE parse per poll loop)
     should_parse = False
     parse_reason = None
     
@@ -355,6 +452,7 @@ def poll_game(game: dict):
             print(f"   🔄 Live sync: parsing game {game_key}")
         
         try:
+            t_parse = perf_counter()
             parse_and_store_game(
                 numeric_id=numeric_id,
                 league_name=game.get("competitionname", "Unknown League"),
@@ -364,8 +462,9 @@ def poll_game(game: dict):
                 game_key=game_key,
                 livestats_url=livestats_url,
             )
+            parse_ms = round((perf_counter() - t_parse) * 1000, 1)
+            print(f"   ⏱️ Parse completed in {parse_ms}ms | pbp_total={metrics.get('pbp_total', 'n/a')}")
             
-            # Update timestamp based on parse reason
             if parse_reason == "final":
                 game_db.table("game_schedule").update({
                     "parsed_at": now_iso,
@@ -413,5 +512,70 @@ def run_worker():
         time.sleep(POLL_INTERVAL)
 
 
+def run_probe():
+    """
+    Probe mode: fetch a single LiveStats URL once, print all metrics, then exit.
+    Set PROBE_LIVESTATS_URL env var to the full data.json URL or the webcast page URL.
+    """
+    url = PROBE_URL.strip()
+    if "/data.json" not in url:
+        numeric_id = url.rstrip("/").split("/")[-1]
+        url = f"{LIVESTATS_BASE}/{numeric_id}/data.json"
+
+    probe_key = os.environ.get("PROBE_GAME_KEY", "probe")
+
+    print(f"\n{'='*60}")
+    print(f"🔬 PROBE: {url}")
+    print(f"{'='*60}")
+
+    try:
+        response, data, metrics = fetch_livestats_json(url, probe_key)
+    except Exception as e:
+        print(f"❌ Probe request failed: {e}")
+        sys.exit(1)
+
+    print(f"\n📡 Response Headers:")
+    print(f"   HTTP Status:       {metrics['status_code']}")
+    print(f"   Content-Encoding:  {metrics['content_encoding']}")
+    print(f"   Content-Length:     {metrics['content_length']}")
+    print(f"   ETag:              {metrics['etag']}")
+    print(f"   Last-Modified:     {metrics['last_modified']}")
+
+    print(f"\n📦 Transfer:")
+    print(f"   Bytes downloaded:  {metrics['bytes_in']:,}")
+    print(f"   Download time:     {metrics['download_ms']}ms")
+
+    if data:
+        pbp = data.get("pbp", [])
+        teams = data.get("tm", {})
+        print(f"\n🏀 Game Data:")
+        print(f"   PBP events:        {len(pbp)}")
+        if pbp:
+            action_numbers = [e.get("actionNumber", 0) for e in pbp if e.get("actionNumber") is not None]
+            if action_numbers:
+                print(f"   Action# range:     {min(action_numbers)} - {max(action_numbers)}")
+        for tid, team in teams.items():
+            team_name = team.get("nameTeam", team.get("name", tid))
+            players = team.get("pl", {})
+            print(f"   Team: {team_name} ({len(players)} players)")
+
+        status = detect_game_status(data, "scheduled")
+        print(f"   Detected status:   {status}")
+
+        json_size = len(json.dumps(data))
+        print(f"   JSON size (raw):   {json_size:,} bytes")
+    else:
+        print(f"\n⚠️ No data returned (HTTP {metrics['status_code']})")
+
+    print(f"\n{'='*60}")
+    print(f"🔬 Probe complete. Run again with same URL to test caching:")
+    print(f"   If ETag/Last-Modified was returned, the second request will")
+    print(f"   send If-None-Match/If-Modified-Since and may get a 304.")
+    print(f"{'='*60}")
+
+
 if __name__ == "__main__":
-    run_worker()
+    if PROBE_URL:
+        run_probe()
+    else:
+        run_worker()
