@@ -1,5 +1,5 @@
 entrypoint = "app/main.py"
-modules = ["nodejs-20", "python-3.11"]
+modules = ["nodejs-20", "python-3.11", "postgresql-16"]
 
 [env]
 PYTHONUNBUFFERED = "1"
@@ -22,3 +22,29 @@ deploymentTarget = "cloudrun"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Flask API Server"
+
+[[workflows.workflow]]
+name = "Flask API Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app/main.py"
+
+[workflows.workflow.metadata]
+outputType = "console"

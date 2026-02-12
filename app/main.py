@@ -3,6 +3,7 @@ from flask_cors import CORS
 from app.routes.parse import parse_bp
 from app.routes.query import query_bp
 from app.routes.chart import chart_bp
+from app.utils.json_parser import run_from_excel
 import openai
 import os
 
@@ -28,7 +29,10 @@ def test_chart_data():
 
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("hpack").setLevel(logging.WARNING)
     print("🚀 Flask app is running...")
     flask_app.run(host="0.0.0.0", port=5000, debug=False)
 

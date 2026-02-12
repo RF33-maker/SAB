@@ -53,6 +53,7 @@ def extract_player_stats(pdf_file, league_id):
         print(f"❌ Failed to open or read PDF: {e}")
         raise
 
+    pdf_file.seek(0)
     players = []
 
     try:

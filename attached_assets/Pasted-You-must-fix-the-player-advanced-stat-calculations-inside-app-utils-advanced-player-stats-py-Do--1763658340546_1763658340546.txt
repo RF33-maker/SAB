@@ -1,0 +1,108 @@
+You must fix the player advanced stat calculations inside app/utils/advanced_player_stats.py.  
+Do NOT modify any other file.
+
+============================================================
+PATCH 1 — Replace the calc_player_usage() function
+============================================================
+
+Find the existing function definition:
+
+def calc_player_usage(player, team_poss, team_totals):
+
+DELETE the entire function body and replace it with:
+
+    """
+    Correct modern Usage% formula (FIBA/NBA):
+    USG% = 100 × ((FGA + 0.44 × FTA + TOV) / TeamPossessions) × (40 / PlayerMinutes)
+    """
+    fga = player.get("sfieldgoalsattempted", 0) or 0
+    fta = player.get("sfreethrowsattempted", 0) or 0
+    tov = player.get("sturnovers", 0) or 0
+
+    # Convert minutes like "32:15" into decimal minutes
+    player_minutes = convert_minutes_to_decimal(player.get("sminutes", 0))
+
+    if team_poss in (None, 0) or player_minutes in (None, 0):
+        return 0.0
+
+    player_actions = fga + 0.44 * fta + tov
+
+    usg = (player_actions / team_poss) * (40 / player_minutes) * 100
+    return usg
+
+
+============================================================
+PATCH 2 — Add a new function: calc_player_ast_to_ratio()
+============================================================
+
+Insert this new function anywhere below the turnover functions:
+
+def calc_player_ast_to_ratio(player):
+    """
+    AST/TO ratio for players.
+    """
+    ast = player.get("sassists", 0) or 0
+    tov = player.get("sturnovers", 0) or 0
+    return safe_div(ast, tov)
+
+
+============================================================
+PATCH 3 — Store player_possessions properly
+============================================================
+
+Find the line where player_poss = calc_player_possessions(player)
+Leave this logic as-is.
+
+Just ensure that updated_fields writes it:
+
+"player_possessions": player_poss,
+
+
+============================================================
+PATCH 4 — Add AST/TO to updated_fields AND ensure usage uses the new formula
+============================================================
+
+Locate the block that builds updated_fields inside compute_player_advanced().
+
+Replace the ENTIRE updated_fields dictionary with this:
+
+    updated_fields = {
+        "player_possessions": player_poss,
+        "efg_percent": efg,
+        "ts_percent": ts,
+        "three_point_rate": three_pt_rate,
+        "usage_percent": usage,
+        "ast_percent": ast_pct,
+        "ast_to_ratio": calc_player_ast_to_ratio(player),
+        "oreb_percent": reb_pcts["oreb_percent"],
+        "dreb_percent": reb_pcts["dreb_percent"],
+        "reb_percent": reb_pcts["reb_percent"],
+        "tov_percent": tov_pct,
+        "pie": pie,
+        "off_rating": ratings["off_rating"],
+        "def_rating": ratings["def_rating"],
+        "net_rating": ratings["net_rating"],
+        "pts_percent_2pt": scoring["pts_percent_2pt"],
+        "pts_percent_3pt": scoring["pts_percent_3pt"],
+        "pts_percent_ft": scoring["pts_percent_ft"],
+        "pts_percent_midrange": scoring["pts_percent_midrange"],
+        "pts_percent_pitp": scoring["pts_percent_pitp"],
+        "pts_percent_fastbreak": scoring["pts_percent_fastbreak"],
+        "pts_percent_second_chance": scoring["pts_percent_second_chance"],
+        "pts_percent_off_turnovers": scoring["pts_percent_off_turnovers"]
+    }
+
+
+============================================================
+RULES
+============================================================
+- DO NOT change any other functions.
+- DO NOT touch compute_advanced_stats.py or advanced_team_stats.py.
+- DO NOT rename existing variables.
+- Only modify app/utils/advanced_player_stats.py.
+- Maintain indentation EXACTLY.
+- After patching, save the file and return the diff.
+
+============================================================
+END
+============================================================

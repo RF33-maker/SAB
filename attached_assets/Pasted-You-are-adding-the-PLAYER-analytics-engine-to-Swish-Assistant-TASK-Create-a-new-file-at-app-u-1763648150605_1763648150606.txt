@@ -1,0 +1,159 @@
+You are adding the PLAYER analytics engine to Swish Assistant.
+
+TASK:
+Create a new file at: app/utils/advanced_player_stats.py
+
+This file will compute all NBA-style advanced PLAYER metrics and write the results into Supabase.
+
+============================================================
+IMPORTS
+============================================================
+The file must begin with:
+
+import math
+from app.utils.supabase_queries import supabase
+
+def safe_div(n, d):
+    return n / d if d not in (0, None) else 0
+
+============================================================
+FUNCTIONS TO IMPLEMENT
+============================================================
+
+------------------------------------------------------------
+1. calc_player_efg(player)
+------------------------------------------------------------
+FGM = player["sfieldgoalsmade"]
+TPM = player["sthreepointersmade"]
+FGA = player["sfieldgoalsattempted"]
+
+Return:
+(FGM + 0.5 * TPM) / FGA
+
+------------------------------------------------------------
+2. calc_player_ts(player)
+------------------------------------------------------------
+PTS = player["spoints"]
+FGA = player["sfieldgoalsattempted"]
+FTA = player["sfreethrowsattempted"]
+
+Return:
+PTS / (2 * (FGA + 0.44 * FTA))
+
+------------------------------------------------------------
+3. calc_player_three_point_rate(player)
+------------------------------------------------------------
+Return 3PA / FGA
+
+------------------------------------------------------------
+4. calc_player_usage(player, team_poss)
+------------------------------------------------------------
+PlayerFormula = FGA + 0.44 * FTA + TOV
+TeamMinutes = 200  # 5 players * 40 min
+PlayerMinutes = convert player["sminutes"] ("32:15" -> 32.25)
+
+USG% = (PlayerFormula * TeamMinutes) / (PlayerMinutes * team_poss)
+
+Return value in decimal form (not percentage)
+
+------------------------------------------------------------
+5. calc_player_possessions(player)
+------------------------------------------------------------
+Estimate:
+player_possessions = FGA + 0.44 * FTA + TOV
+
+------------------------------------------------------------
+6. calc_player_ast_percent(player, team_totals)
+------------------------------------------------------------
+AST% = AST / (team_FGM - player_FGM)
+
+Use safe_div.
+
+------------------------------------------------------------
+7. calc_player_rebound_percentages(player, team_totals, opp_totals)
+------------------------------------------------------------
+OREB% = player_ORB / (player_ORB + opp_DRB)
+DREB% = player_DRB / (player_DRB + opp_ORB)
+REB%  = player_REB / (player_REB + opp_REB)
+
+------------------------------------------------------------
+8. calc_player_tov_percent(player)
+------------------------------------------------------------
+TOV% = TOV / (FGA + 0.44 * FTA + TOV)
+
+------------------------------------------------------------
+9. calc_player_pie(player, team_totals)
+------------------------------------------------------------
+Use standard NBA formula:
+PIE = (Player positive actions – Player negative actions) /
+      (Team positive + Team negative)
+
+Define positive actions:
+PTS + FGM + FTM + OREB + AST + STL + BLK
+
+Negative:
+FGA - FGM
+FTA - FTM
+TOV
+PF
+
+Team totals follow the same structure.
+
+------------------------------------------------------------
+10. calc_player_ratings_estimated(player, team_stats, opp_stats)
+------------------------------------------------------------
+Estimate:
+
+OffRtg = (PTS / player_possessions) * 100
+DefRtg = (opp_points / team_possessions) * 100
+NetRtg = OffRtg - DefRtg
+
+This is acceptable until lineup possession tracking is implemented.
+
+------------------------------------------------------------
+11. calc_player_scoring_distribution(player)
+------------------------------------------------------------
+Compute:
+
+pts_2pt = 2 * player["stwopointersmade"]
+pts_3pt = 3 * player["sthreepointersmade"]
+pts_ft  = player["sfreethrowsmade"]
+pts_paint = player["spointsinthepaint"]
+pts_fast = player["spointsfastbreak"]
+pts_2nd  = player["spointssecondchance"]
+pts_off_to = player["spointsfromturnovers"]
+
+Return % of total points.
+
+------------------------------------------------------------
+12. fetch_player_stats_for_league(league_id)
+------------------------------------------------------------
+Use:
+
+supabase.table("player_stats").select("*").eq("league_id", league_id).execute()
+
+Return data list.
+
+------------------------------------------------------------
+13. write_player_advanced_to_supabase(player_id, data)
+------------------------------------------------------------
+Use:
+
+supabase.table("player_stats").update(data).eq("id", player_id).execute()
+
+------------------------------------------------------------
+14. compute_player_advanced(player_rows, team_map)
+------------------------------------------------------------
+This function:
+
+- loops all players
+- finds their team totals via team_map[player["team_id"]]
+- finds opponent totals via same game_key
+- computes all advanced metrics above
+- writes them via write_player_advanced_to_supabase()
+
+return nothing
+
+============================================================
+END OF FILE REQUIREMENTS
+============================================================

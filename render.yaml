@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: swish-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app.main:flask_app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DB_SCHEMA
+        value: public
+      - key: PYTHON_VERSION
+        value: "3.11.11"
+
+  - type: worker
+    name: swish-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.worker
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DB_SCHEMA
+        value: public
+      - key: ENABLE_LIVE_SYNC
+        value: "true"
+      - key: LIVE_SYNC_SECONDS
+        value: "10"
+      - key: PYTHON_VERSION
+        value: "3.11.11"
