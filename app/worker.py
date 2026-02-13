@@ -50,6 +50,7 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("worker")
+log.warning("Swish Worker is live.")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
