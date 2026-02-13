@@ -1,20 +1,54 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from app.routes.parse import parse_bp
-from app.routes.query import query_bp
 from app.routes.chart import chart_bp
 from app.utils.json_parser import run_from_excel
-import openai
 import os
+import logging
+import sys
 
-print("✅ App started, importing blueprints...")
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.WARNING),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+    stream=sys.stdout,
+)
+log = logging.getLogger("app")
+log.warning("Swish Assistant is live.")
+
+ENABLE_OPENAI = os.environ.get("ENABLE_OPENAI", "false").lower() == "true"
 
 flask_app = Flask(__name__)
 CORS(flask_app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 flask_app.register_blueprint(parse_bp)
-flask_app.register_blueprint(query_bp)
 flask_app.register_blueprint(chart_bp)
+
+if ENABLE_OPENAI:
+    from app.routes.query import query_bp
+    flask_app.register_blueprint(query_bp)
+    log.info("OpenAI features ENABLED")
+else:
+    log.info("OpenAI features DISABLED")
+
+    @flask_app.route('/start', methods=['GET', 'OPTIONS'])
+    @flask_app.route('/reset', methods=['GET', 'OPTIONS'])
+    @flask_app.route('/chat', methods=['POST', 'OPTIONS'])
+    @flask_app.route('/check_summary', methods=['POST', 'OPTIONS'])
+    @flask_app.route('/api/chat/league', methods=['POST', 'OPTIONS'])
+    @flask_app.route('/api/generate-summary', methods=['POST', 'OPTIONS'])
+    @flask_app.route('/api/ai-analysis', methods=['POST', 'OPTIONS'])
+    def ai_not_enabled():
+        if request.method == 'OPTIONS':
+            resp = flask_app.make_default_options_response()
+            resp.headers['Access-Control-Allow-Origin'] = 'https://swishassistant.com'
+            resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            return resp, 204
+        resp = jsonify({"error": "AI features not enabled"})
+        resp.headers['Access-Control-Allow-Origin'] = 'https://swishassistant.com'
+        return resp, 501
 
 @flask_app.route('/')
 def home():
@@ -28,11 +62,8 @@ def test_chart_data():
     ])
 
 if __name__ == "__main__":
-    import logging
-    logging.basicConfig(level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("hpack").setLevel(logging.WARNING)
-    print("🚀 Flask app is running...")
     flask_app.run(host="0.0.0.0", port=5000, debug=False)
 
