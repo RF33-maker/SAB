@@ -15,6 +15,7 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("app")
+log.warning("Swish Assistant is live.")
 
 ENABLE_OPENAI = os.environ.get("ENABLE_OPENAI", "false").lower() == "true"
 
