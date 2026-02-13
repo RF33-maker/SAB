@@ -4,10 +4,19 @@ from app.routes.parse import parse_bp
 from app.routes.chart import chart_bp
 from app.utils.json_parser import run_from_excel
 import os
+import logging
+import sys
+
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.WARNING),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+    stream=sys.stdout,
+)
+log = logging.getLogger("app")
 
 ENABLE_OPENAI = os.environ.get("ENABLE_OPENAI", "false").lower() == "true"
-
-print("✅ App started, importing blueprints...")
 
 flask_app = Flask(__name__)
 CORS(flask_app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
@@ -18,9 +27,9 @@ flask_app.register_blueprint(chart_bp)
 if ENABLE_OPENAI:
     from app.routes.query import query_bp
     flask_app.register_blueprint(query_bp)
-    print("🤖 OpenAI features ENABLED — query blueprint registered")
+    log.info("OpenAI features ENABLED")
 else:
-    print("🚫 OpenAI features DISABLED (set ENABLE_OPENAI=true to enable)")
+    log.info("OpenAI features DISABLED")
 
     @flask_app.route('/start', methods=['GET', 'OPTIONS'])
     @flask_app.route('/reset', methods=['GET', 'OPTIONS'])
@@ -52,11 +61,8 @@ def test_chart_data():
     ])
 
 if __name__ == "__main__":
-    import logging
-    logging.basicConfig(level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("hpack").setLevel(logging.WARNING)
-    print("🚀 Flask app is running...")
     flask_app.run(host="0.0.0.0", port=5000, debug=False)
 
