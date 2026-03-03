@@ -52,3 +52,8 @@ args = "python app/main.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[userenv]
+
+[userenv.shared]
+ENABLE_OPENAI = "true"
