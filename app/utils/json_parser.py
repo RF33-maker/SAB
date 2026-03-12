@@ -460,7 +460,11 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 action_number = s.get("actionNumber")
                 if action_number is None:
                     continue  # cannot dedupe without action_number
-                pno = s.get("pno")
+                pno_raw = s.get("pno")
+                try:
+                    pno = int(pno_raw) if pno_raw is not None else None
+                except (ValueError, TypeError):
+                    pno = None
                 linked_player_id = roster_map.get((side, pno)) if pno is not None else None
                 record = {
                     "league_id": league_id,
