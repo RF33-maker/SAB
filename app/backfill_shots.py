@@ -42,10 +42,11 @@ REQUEST_HEADERS = {
 
 def get_games_missing_shots() -> list:
     """
-    Return all final games that have a LiveStats URL but zero rows
-    in shot_chart.
+    Return all final games that have a LiveStats URL but either:
+    - zero rows in shot_chart, OR
+    - shots exist but all have NULL clock (need clock backfill)
     """
-    log.info("Querying games missing shot data...")
+    log.info("Querying games missing shot data or clock...")
 
     query = (
         game_db.table("game_schedule")
@@ -60,12 +61,17 @@ def get_games_missing_shots() -> list:
     all_final = result.data or []
     log.info("Found %d final games with a LiveStats URL", len(all_final))
 
-    # Find which game_keys already have shots
-    shot_result = game_db.table("shot_chart").select("game_key").execute()
-    games_with_shots = {row["game_key"] for row in (shot_result.data or [])}
+    # Games with at least one shot that has a clock value — fully done
+    clocked_result = (
+        game_db.table("shot_chart")
+        .select("game_key")
+        .not_.is_("clock", "null")
+        .execute()
+    )
+    games_with_clock = {row["game_key"] for row in (clocked_result.data or [])}
 
-    missing = [g for g in all_final if g["game_key"] not in games_with_shots]
-    log.info("%d games have no shot data — will backfill", len(missing))
+    missing = [g for g in all_final if g["game_key"] not in games_with_clock]
+    log.info("%d games need shot/clock backfill", len(missing))
     return missing[:LIMIT]
 
 
@@ -113,10 +119,19 @@ def fetch_json(numeric_id: str) -> dict | None:
 def parse_shots_for_game(game: dict, data: dict) -> list:
     """
     Build shot records from JSON, linking player_id via name_map from DB.
+    Clock is sourced from the PBP events (shots have no clock field in the JSON).
     """
     game_key = game["game_key"]
     league_id = game["league_id"]
     teams = data.get("tm", {})
+
+    # Build PBP clock lookup: actionNumber -> clock string
+    pbp_clock_map = {}
+    for event in data.get("pbp", []):
+        an = event.get("actionNumber")
+        cl = event.get("clock")
+        if an is not None and cl:
+            pbp_clock_map[an] = cl
 
     # Load existing player_stats for name->player_id mapping
     name_map = build_roster_map_from_db(game_key)
@@ -177,11 +192,8 @@ def parse_shots_for_game(game: dict, data: dict) -> list:
                 "x": s.get("x"),
                 "y": s.get("y"),
                 "action_number": action_number,
+                "clock": pbp_clock_map.get(action_number),
             }
-            clock_val = s.get("clock")
-            if clock_val is not None:
-                record["clock"] = clock_val
-
             shot_records.append(record)
 
     return shot_records

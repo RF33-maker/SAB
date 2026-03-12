@@ -450,6 +450,14 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         log.error("Failed to process player stats for game %s: %s", numeric_id, e, exc_info=True)
 
     # --- Insert shot chart (reads per-team shots from tm[side]["shot"]) ---
+    # Build PBP clock map: actionNumber -> clock string (shots have no clock field)
+    pbp_clock_map = {}
+    for event in data.get("pbp", []):
+        an = event.get("actionNumber")
+        cl = event.get("clock")
+        if an is not None and cl:
+            pbp_clock_map[an] = cl
+
     shot_records = []
     try:
         for side, team in teams.items():
@@ -480,10 +488,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     "x": s.get("x"),
                     "y": s.get("y"),
                     "action_number": action_number,
+                    "clock": pbp_clock_map.get(action_number),
                 }
-                clock_val = s.get("clock")
-                if clock_val is not None:
-                    record["clock"] = clock_val
                 shot_records.append(record)
 
         log.info("Prepared %d shot records for game %s", len(shot_records), numeric_id)
