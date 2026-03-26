@@ -1,3 +1,10 @@
+"""
+parser.py — DEPRECATED
+
+This file is kept for reference only.
+All PDF ingestion now goes through app/utils/pdf_parser.py
+and the /api/parse-pdf endpoint.
+"""
 import pdfplumber
 import pandas as pd
 import re
@@ -6,7 +13,7 @@ from app.utils.helpers import get_val
 from app.utils.summary import generate_game_summary
 from app.utils.chat_data import supabase
 
-print("🐍 parser.py loaded")
+print("⚠️  parser.py is deprecated — use pdf_parser.py instead")
 
 def log(msg):
     import sys

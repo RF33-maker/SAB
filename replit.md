@@ -16,7 +16,19 @@ Key API endpoints include `/api/parse` for file uploads, `/start` and `/reset` f
 
 ### Data Processing Pipeline
 
--   **PDF Parsing**: Utilizes PDFPlumber and PyMuPDF to extract game metadata and player statistics from various PDF box score formats using complex regex patterns.
+-   **PDF Parsing (Genius Sports post-game PDFs)**: A dedicated ingestion pipeline in `app/utils/pdf_parser.py` handles Genius Sports / FIBA post-game PDF exports produced at Richards Elite and similar events where live JSON stats are unavailable. The pipeline auto-detects report type from the first-page header and routes to sub-parsers:
+    -   **box_score**: Extracts per-player stats (24-column regex), team totals, and footer stats (paint points, bench points, turnovers, fast-break, etc.) → writes to `player_stats` and `team_stats` (test schema).
+    -   **pbp** (play-by-play): Uses layout-based column detection (home ~col 12, away ~col 48) to reconstruct play-by-play events with side attribution → writes to `live_events` (test schema).
+    -   **lineup**: Parses Lineup Analysis tables with multi-line lineup text and per-row stat columns → writes to `lineup_stats` (test schema).
+    -   **plus_minus**: Extracts per-player plus/minus summary (mins on/off, pts diff on/off) → writes to `player_plus_minus` (test schema).
+    -   **rotations**: Parses multi-line Rotations Summary blocks (lineup header + stat row) → writes to `rotations_summary` (test schema).
+    -   **shot_chart / shot_areas**: Correctly detected and skipped (image-only PDFs, no extractable data).
+    -   game_key defaults to `PDF_{game_no}` from the PDF header. All writes target `test` schema for safety.
+    -   Exposed via the `/api/parse-pdf` endpoint (POST, multipart/form-data: `file`, `league_name`, optional `game_key`/`user_id`).
+-   **Legacy parser.py**: Marked deprecated; all PDF ingestion now uses `pdf_parser.py`.
+-   **PDF schema additions** (`migrations/pdf_tables.sql`): 15 new `team_stats` columns (paint pts, bench pts, turnovers, fast-break, etc.), attendance/officials on `game_schedule`, and 3 new tables: `lineup_stats`, `player_plus_minus`, `rotations_summary`.
+-   **JSON Parser fixes** (`json_parser.py`): Fixed 4 wrong TEAM_FIELD_MAP keys (`tot_sTimeLeading`, `tot_sBiggestScoringRun`, `tot_sLeadChanges`, `tot_sTimesScoresLevel`), added 1 missing key (`tot_sBiggestLead`), added 7 unmapped fields, updated `lds`→`game_leaders_json`, `source_type` tag, and attendance/officials upsert from JSON.
+-   **Legacy PDF Parsing**: Utilizes PDFPlumber and PyMuPDF to extract game metadata and player statistics from various PDF box score formats using complex regex patterns.
 -   **Excel Parsing (Bulk Import)**: Employs Pandas for structured data processing, featuring a field mapping system for standardization and optional "Pool" column support. It prioritizes schedule-first processing, adding games to `game_schedule` before fetching LiveStats. Smart change detection skips unchanged games on repeat uploads, significantly reducing database calls.
 -   **Live Game Parser (Real-time)**: A continuous polling system (`app/live_parser.py`) processes live games from `game_schedule` data.json URLs. It extracts comprehensive game data (team stats, player stats, plays, shots), normalizes player/team names, and syncs data to `team_stats`, `player_stats`, `live_events`, and `shot_chart`. A status field system (`live` vs. `final`) manages data integrity and optimizes performance by excluding finalized games from polling.
 -   **Play-by-Play Backfill System**: Backfills historical play-by-play data from FIBA LiveStats JSON into the `live_events` table, including an optimized fuzzy player matching system and team name normalization.

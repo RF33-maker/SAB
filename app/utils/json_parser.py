@@ -111,10 +111,25 @@ TEAM_FIELD_MAP = {
     "tot_sPointsFastBreak": "tot_spointsfastbreak",
     "tot_sBenchPoints": "tot_sbenchpoints",
     "tot_sPointsInThePaint": "tot_spointsinthepaint",
-    "tot_timeLeading": "tot_timeleading",
-    "tot_biggestScoringRun": "tot_biggestscoringrun",
-    "tot_leadChanges": "tot_leadchanges",
-    "tot_timesScoresLevel": "tot_timesscoreslevel",
+    "tot_sTimeLeading": "tot_timeleading",
+    "tot_sBiggestScoringRun": "tot_biggestscoringrun",
+    "tot_sLeadChanges": "tot_leadchanges",
+    "tot_sTimesScoresLevel": "tot_timesscoreslevel",
+    "tot_sBiggestLead": "tot_sbiggestlead",
+    "tot_sFoulsOn": "tot_sfoulson",
+    "tot_sFoulsTotal": "tot_sfoulstotal",
+    "tot_sFoulsTeam": "tot_sfoulsteam",
+    "tot_sReboundsTeam": "tot_sreboundsteam",
+    "tot_sReboundsTeamDefensive": "tot_sreboundsteamdefensive",
+    "tot_sReboundsTeamOffensive": "tot_sreboundsteamoffensive",
+    "tot_sTurnoversTeam": "tot_sturnoverssteam",
+    "tot_eff_1": "tot_eff_1",
+    "tot_eff_2": "tot_eff_2",
+    "tot_eff_3": "tot_eff_3",
+    "tot_eff_4": "tot_eff_4",
+    "tot_eff_5": "tot_eff_5",
+    "tot_eff_6": "tot_eff_6",
+    "tot_eff_7": "tot_eff_7",
     "p1_score": "p1_score",
     "p2_score": "p2_score",
     "p3_score": "p3_score",
@@ -388,6 +403,24 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     teams = data.get("tm", {})
 
+    # --- Update game_schedule with attendance and officials if present ---
+    _sched_extra = {}
+    _attendance = data.get("attendance")
+    _officials = data.get("officials")
+    if _attendance is not None:
+        try:
+            _sched_extra["attendance"] = int(_attendance)
+        except (TypeError, ValueError):
+            pass
+    if _officials:
+        import json as _json
+        _sched_extra["officials"] = _json.dumps(_officials)
+    if _sched_extra:
+        try:
+            game_db.table("game_schedule").update(_sched_extra).eq("game_key", game_key).execute()
+        except Exception as _e:
+            print(f"⚠️  Could not update game_schedule with attendance/officials: {_e}")
+
     # --- Insert team stats ---
     team_records = []
     for side, team in teams.items():
@@ -399,10 +432,15 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             "game_key": game_key,
             "team_id": team_id,
             "league_id": league_id,
+            "source_type": "json",
             "identifier_duplicate": f"{numeric_id}_{team_id}_{side}"
         }
         for json_key, db_key in TEAM_FIELD_MAP.items():
             team_record[db_key] = team.get(json_key)
+        lds = team.get("lds")
+        if lds:
+            import json as _json
+            team_record["game_leaders_json"] = _json.dumps(lds)
         team_records.append(team_record)
 
     insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")

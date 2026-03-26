@@ -10,6 +10,59 @@ parse_bp = Blueprint("parse", __name__)
 log = logging.getLogger("parse")
 
 
+@parse_bp.route("/api/parse-pdf", methods=["POST"])
+def handle_parse_pdf():
+    """
+    Ingest a Genius Sports post-game PDF.
+
+    Accepts multipart/form-data with:
+      - file:         PDF file (required)
+      - league_name:  Competition / league name (required)
+      - game_key:     Override game_key (optional — defaults to PDF_{game_no})
+      - user_id:      User UUID for entity tracking (optional)
+
+    Returns JSON with parse result including report_type, game_key, counts.
+    """
+    try:
+        from app.utils.pdf_parser import parse_pdf
+
+        if "file" not in request.files:
+            return jsonify({"error": "No PDF file provided (use form field 'file')"}), 400
+
+        pdf_file = request.files["file"]
+        if not pdf_file.filename or not pdf_file.filename.lower().endswith(".pdf"):
+            return jsonify({"error": "Uploaded file must be a PDF"}), 400
+
+        league_name = request.form.get("league_name", "").strip()
+        if not league_name:
+            return jsonify({"error": "league_name is required"}), 400
+
+        game_key = request.form.get("game_key", "").strip() or None
+        user_id = request.form.get("user_id", "").strip() or None
+
+        log.info(
+            "PDF parse request: file=%s league=%s game_key=%s user=%s",
+            pdf_file.filename, league_name, game_key, user_id,
+        )
+
+        result = parse_pdf(
+            pdf_file=pdf_file.stream,
+            league_name=league_name,
+            provided_game_key=game_key,
+            user_id=user_id,
+        )
+
+        if "error" in result:
+            log.error("PDF parse error: %s", result["error"])
+            return jsonify(result), 500
+
+        return jsonify({"status": "success", **result})
+
+    except Exception as e:
+        log.error("Fatal error in /api/parse-pdf: %s", e, exc_info=True)
+        return jsonify({"error": f"Fatal error: {str(e)}"}), 500
+
+
 @parse_bp.route("/api/parse", methods=["POST"])
 def handle_parse():
     try:
