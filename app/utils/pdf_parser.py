@@ -221,12 +221,16 @@ def _parse_header(first_page_text: str) -> dict:
                 c = candidate_line.strip()
                 if not c:
                     continue
-                if c.startswith("Report Generated") or c.startswith("(") or "Crew Chief" in c:
+                if c.startswith("(") or "Crew Chief" in c:
                     continue
                 if re.search(r"\d+\s+[–\-]\s+\d+", c):
                     continue
-                if not re.search(r"\d", c):
-                    meta["away_team_full"] = c
+                # Strip inline "Report Generated: ..." suffix before digit check
+                c_clean = re.sub(r"\s+Report Generated:.*$", "", c).strip()
+                if not c_clean or c_clean.startswith("Report Generated"):
+                    continue
+                if not re.search(r"\d", c_clean):
+                    meta["away_team_full"] = c_clean
                     break
     else:
         meta["home_team_full"] = None
