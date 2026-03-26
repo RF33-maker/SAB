@@ -22,7 +22,7 @@ ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sfoulsteam numeric;
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteam numeric;
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamdefensive numeric;
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamoffensive numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sturnoverssteam numeric;
+ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sturnovers_team numeric;
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_1 numeric;
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_2 numeric;
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_3 numeric;
@@ -33,6 +33,12 @@ ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_7 numeric;
 
 -- Game leaders JSON (from 'lds' field in LiveStats JSON)
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS game_leaders_json jsonb;
+
+-- ========================================
+-- LIVE EVENTS - Add score_diff for PDF PBP
+-- ========================================
+
+ALTER TABLE live_events ADD COLUMN IF NOT EXISTS score_diff integer;
 
 -- Source tag: 'json' or 'pdf'
 ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS source_type text;
@@ -48,7 +54,7 @@ ALTER TABLE game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
 -- LINEUP STATS (PDF: Line Up Analysis)
 -- ========================================
 
-CREATE TABLE IF NOT EXISTS lineup_stats (
+CREATE TABLE IF NOT EXISTS public.lineup_stats (
     id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     game_key            text NOT NULL,
     league_id           uuid REFERENCES leagues(league_id),
@@ -72,13 +78,14 @@ CREATE TABLE IF NOT EXISTS lineup_stats (
 -- PLAYER PLUS/MINUS (PDF: Player Plus/Minus Summary)
 -- ========================================
 
-CREATE TABLE IF NOT EXISTS player_plus_minus (
+CREATE TABLE IF NOT EXISTS public.player_plus_minus (
     id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     game_key            text NOT NULL,
     league_id           uuid REFERENCES leagues(league_id),
     team_id             uuid REFERENCES teams(team_id),
     player_id           uuid REFERENCES players(id),
-    player_name         text,
+    full_name           text,
+    player_name         text GENERATED ALWAYS AS (full_name) STORED,
     shirt_number        text,
     team_name           text,
     mins_on             text,
@@ -106,7 +113,7 @@ CREATE TABLE IF NOT EXISTS player_plus_minus (
 -- ROTATIONS SUMMARY (PDF: Rotations Summary)
 -- ========================================
 
-CREATE TABLE IF NOT EXISTS rotations_summary (
+CREATE TABLE IF NOT EXISTS public.rotations_summary (
     id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     game_key            text NOT NULL,
     league_id           uuid REFERENCES leagues(league_id),

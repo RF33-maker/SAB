@@ -122,7 +122,7 @@ TEAM_FIELD_MAP = {
     "tot_sReboundsTeam": "tot_sreboundsteam",
     "tot_sReboundsTeamDefensive": "tot_sreboundsteamdefensive",
     "tot_sReboundsTeamOffensive": "tot_sreboundsteamoffensive",
-    "tot_sTurnoversTeam": "tot_sturnoverssteam",
+    "tot_sTurnoversTeam": "tot_sturnovers_team",
     "tot_eff_1": "tot_eff_1",
     "tot_eff_2": "tot_eff_2",
     "tot_eff_3": "tot_eff_3",

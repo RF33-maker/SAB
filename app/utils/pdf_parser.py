@@ -74,31 +74,26 @@ SKIP_TYPES = {"shot_chart", "shot_areas"}
 
 
 def _upsert(table: str, records: list, conflict_col: str) -> int:
+    """Upsert records into the test schema. Raises on failure."""
     if not records:
         return 0
     db = _get_pdf_game_db()
-    try:
-        db.table(table).upsert(records, on_conflict=conflict_col).execute()
-        print(f"✅ PDF: Upserted {len(records)} rows into test.{table}")
-        return len(records)
-    except Exception as e:
-        print(f"❌ PDF: Upsert failed for test.{table}: {e}")
-        return 0
+    db.table(table).upsert(records, on_conflict=conflict_col).execute()
+    log.info("PDF: Upserted %d rows into test.%s", len(records), table)
+    return len(records)
 
 
 def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
+    """Insert records in chunks into the test schema. Raises on any chunk failure."""
     if not records:
         return 0
     db = _get_pdf_game_db()
     inserted = 0
     for i in range(0, len(records), chunk_size):
         chunk = records[i : i + chunk_size]
-        try:
-            db.table(table).insert(chunk).execute()
-            inserted += len(chunk)
-        except Exception as e:
-            print(f"❌ PDF: Insert failed for test.{table} chunk {i}: {e}")
-    print(f"✅ PDF: Inserted {inserted} rows into test.{table}")
+        db.table(table).insert(chunk).execute()
+        inserted += len(chunk)
+    log.info("PDF: Inserted %d rows into test.%s", inserted, table)
     return inserted
 
 
@@ -356,6 +351,9 @@ def _parse_box_score_row(line: str):
         "sturnovers": _safe_int(m.group(17)),
         "ssteals": _safe_int(m.group(18)),
         "sblocks": _safe_int(m.group(19)),
+        # BA (Blocks Against / sblocksreceived) is not present in Genius Sports
+        # post-game PDF format — column does not appear in exported box scores.
+        "sblocksreceived": None,
         "sfoulspersonal": _safe_int(m.group(20)),
         "sfoulson": _safe_int(m.group(21)),
         "splusminuspoints": _safe_int(m.group(22)),
@@ -760,138 +758,204 @@ def _is_page_header_line(line: str) -> bool:
 def _parse_pbp(pdf, meta: dict, league_id: str, home_team_id: str, away_team_id: str) -> dict:
     """
     Parse Play by Play PDF into live_events records.
+
+    Layout (layout=True extraction):
+      Col 0-6:   clock (MM:SS) — always in home column
+      Col ~7-43: home-side action text
+      Col ~44+:  away-side action text
+    Score+diff appear inline in the same line as their clock (standalone score lines)
+    or appended to an action line.
+
     Returns {event_count}.
     """
     game_key = meta["game_key"]
     home_abbr = meta.get("home_abbr", "HOME")
     away_abbr = meta.get("away_abbr", "AWAY")
 
-    # First pass: collect all text, strip per-page headers, track periods
-    all_lines = []
-    starters_lines = []
-    current_period = 1
-
-    for page in pdf.pages:
-        text = page.extract_text(layout=True) or ""
-        skip_until_gametime = True
-
-        for line in text.split("\n"):
-            # Skip blank lines in header region
-            if skip_until_gametime:
-                if re.match(r"^\s*Game Time", line):
-                    skip_until_gametime = False
-                continue
-
-            if _is_page_header_line(line):
-                continue
-
-            # Capture starters
-            line_s = line.strip()
-            if re.match(r"^(SOU|COP|HOME|AWAY|[A-Z]{2,5})\s+\d+", line_s):
-                starters_lines.append(line_s)
-                continue
-
-            all_lines.append(line)
-
-    player_map = _build_player_team_map(starters_lines)
+    # Column boundary: chars 0..COL_SPLIT = home side, chars COL_SPLIT.. = away side
+    COL_SPLIT = 44
 
     # Abbr → team_id
     abbr_to_team = {home_abbr: home_team_id, away_abbr: away_team_id}
 
-    # Second pass: parse events
+    # Surname → abbr, built from "Quarter Starters:" blocks
+    player_team_map: dict = {}
+
+    # Collect per-period lines with side attribution
+    class _RawLine:
+        __slots__ = ("period", "clock", "side", "text")
+        def __init__(self, period, clock, side, text):
+            self.period = period
+            self.clock = clock
+            self.side = side        # "home" | "away" | "score" | None
+            self.text = text
+
+    raw_lines: list = []
+    current_period = 1
+    current_clock = None
+
+    for page in pdf.pages:
+        text_layout = page.extract_text(layout=True) or ""
+        skip_header = True
+
+        for raw_line in text_layout.split("\n"):
+            # Skip until the column header "Game Time ..."
+            if skip_header:
+                if re.match(r"^\s*Game Time", raw_line):
+                    skip_header = False
+                continue
+
+            if _is_page_header_line(raw_line):
+                continue
+
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+
+            # Quarter starters line: "SOU 5 SURNAME F 8 SURNAME F ..."
+            if re.match(r"^[A-Z]{2,5}\s+\d+\s+[A-Z]", stripped):
+                _collect_starters(stripped, player_team_map)
+                continue
+
+            # Quarter header: "Quarter N"
+            qm = _QUARTER_RE.match(stripped)
+            if qm:
+                current_period = int(qm.group(1))
+                current_clock = None
+                continue
+
+            # Clock in first ~7 chars
+            clock_m = re.match(r"^\s{0,6}(\d{2}:\d{2})", raw_line)
+            if clock_m:
+                current_clock = clock_m.group(1)
+
+            home_text = raw_line[:COL_SPLIT].strip()
+            away_text = raw_line[COL_SPLIT:].strip() if len(raw_line) > COL_SPLIT else ""
+
+            # Determine which side has actual action content
+            # Remove clock token from home_text for action detection
+            home_action = re.sub(r"^\d{2}:\d{2}\s*", "", home_text).strip()
+            # Score-only line: the home_action is just "SCORE DIFF" like "20-16 4"
+            # or "4-7  -3", detected by absence of letters
+            score_only = bool(home_action and not re.search(r"[A-Za-z]", home_action))
+
+            if home_action and not score_only:
+                raw_lines.append(_RawLine(current_period, current_clock, "home", home_action))
+            if away_text:
+                raw_lines.append(_RawLine(current_period, current_clock, "away", away_text))
+            if score_only:
+                raw_lines.append(_RawLine(current_period, current_clock, "score", home_action))
+
+    # Build events from raw_lines — merge continuation lines (no clock) into previous
     events = []
     action_counter = 0
-    current_period = 1
-    pending_clock = None
-    pending_lines = []
 
-    def flush_pending():
-        nonlocal pending_clock, pending_lines, action_counter
-        if not pending_clock and not pending_lines:
-            return
+    # Merge lines with same (period, clock, side) into combined text
+    merged: list = []  # list of (period, clock, side, text)
+    for rl in raw_lines:
+        if merged and merged[-1][2] == rl.side and merged[-1][1] == rl.clock and merged[-1][0] == rl.period:
+            merged[-1] = (merged[-1][0], merged[-1][1], merged[-1][2], merged[-1][3] + " " + rl.text)
+        else:
+            merged.append([rl.period, rl.clock, rl.side, rl.text])
 
-        clock = pending_clock
-        desc = " ".join(l.strip() for l in pending_lines if l.strip())
+    # Track running score so standalone score lines are available to next action
+    running_score = None
+    running_diff = None
 
-        if not desc and not clock:
-            pending_clock = None
-            pending_lines = []
-            return
+    for period, clock, side, text in merged:
+        text = text.strip()
+        if not text:
+            continue
 
-        # Extract score
-        score_m = _SCORE_RE.search(desc)
-        score = f"{score_m.group(1)}-{score_m.group(2)}" if score_m else None
+        if side == "score":
+            sm = re.search(r"(\d+-\d+)\s+(-?\d+)", text)
+            if sm:
+                running_score = sm.group(1)
+                running_diff = _safe_int(sm.group(2))
+            continue
 
-        # Clean description (remove score/diff tokens)
-        desc_clean = re.sub(r"\b\d+[-–]\d+\b", "", desc)
-        desc_clean = re.sub(r"\s{2,}", " ", desc_clean).strip()
-        desc_clean = re.sub(r"^\s*-?\d+\s*", "", desc_clean).strip()
+        # Extract inline score+diff from action line
+        inline_score_m = re.search(r"(\d+-\d+)\s+(-?\d+)", text)
+        if inline_score_m:
+            running_score = inline_score_m.group(1)
+            running_diff = _safe_int(inline_score_m.group(2))
+            # Remove score/diff from description
+            text = re.sub(r"\s+\d+-\d+\s+-?\d+", "", text).strip()
 
-        # Find player surname in description (CAPS pattern)
-        team_id = None
+        # Determine team from side or player surname
+        if side == "home":
+            team_id = home_team_id
+        elif side == "away":
+            team_id = away_team_id
+        else:
+            team_id = None
+
+        # Player resolution from description: "15 SURNAME I" pattern
         player_id = None
-        player_name_str = None
-        pm = _PLAYER_IN_EVENT_RE.search(desc)
+        pm = re.search(r"\b(\d{1,2})\s+([A-Z][A-Z\-ÑÉÀÜÖ]+(?:-[A-Z]+)?)\s+([A-Z])\b", text)
         if pm:
-            surname = pm.group(2).upper()
-            abbr = player_map.get(surname)
-            if abbr:
-                team_id = abbr_to_team.get(abbr)
+            jersey_num = pm.group(1)
+            surname = pm.group(2)
+            initial = pm.group(3)
+            # Try player map for this team
+            player_abbr = player_team_map.get(surname)
+            if player_abbr and player_abbr in abbr_to_team:
+                team_id = abbr_to_team[player_abbr]
+            # Build full name guess: "SURNAME I" → "SURNAME I" (we don't have first name)
+            player_guess = f"{surname} {initial}"
+            try:
+                t_id_for_player = team_id
+                if t_id_for_player:
+                    player_id = get_or_create_player(
+                        player_guess, t_id_for_player, jersey_num, None, league_id
+                    )
+            except Exception as e:
+                log.debug("PBP player lookup failed for '%s': %s", player_guess, e)
 
-        action_type = _action_type_from_desc(desc_clean)
+        action_type = _action_type_from_desc(text)
         action_counter += 1
 
-        if desc_clean or clock:
-            events.append({
-                "game_key": game_key,
-                "league_id": league_id,
-                "team_id": team_id,
-                "player_id": player_id,
-                "action_number": action_counter,
-                "period": current_period,
-                "clock": clock,
-                "action_type": action_type,
-                "description": desc_clean or desc,
-                "score": score,
-                "source_type": "pdf",
-            })
-
-        pending_clock = None
-        pending_lines = []
-
-    for line in all_lines:
-        line_s = line.strip()
-        if not line_s:
-            continue
-
-        # Quarter marker
-        qm = _QUARTER_RE.match(line_s)
-        if qm:
-            flush_pending()
-            current_period = int(qm.group(1))
-            continue
-
-        # Timestamp line
-        cm = _CLOCK_RE.match(line)
-        if cm:
-            flush_pending()
-            pending_clock = cm.group(1)
-            rest = cm.group(2).strip()
-            if rest:
-                pending_lines.append(rest)
-            continue
-
-        # Continuation line
-        if line_s:
-            pending_lines.append(line_s)
-
-    flush_pending()
+        events.append({
+            "game_key": game_key,
+            "league_id": league_id,
+            "team_id": team_id,
+            "player_id": player_id,
+            "action_number": action_counter,
+            "period": period,
+            "clock": clock,
+            "action_type": action_type,
+            "description": text,
+            "score": running_score,
+            "score_diff": running_diff,
+            "source_type": "pdf",
+        })
 
     if not events:
         return {"event_count": 0}
 
     count = _insert_batch("live_events", events)
     return {"event_count": count}
+
+
+def _collect_starters(line: str, player_map: dict) -> None:
+    """Parse 'SOU 5 SURNAME I 8 SURNAME2 I2 ...' and populate player_map."""
+    parts = line.strip().split()
+    if not parts:
+        return
+    abbr = parts[0]
+    i = 1
+    while i < len(parts):
+        if parts[i].isdigit():
+            i += 1
+            if i < len(parts):
+                surname = parts[i].upper()
+                player_map[surname] = abbr
+                i += 1
+                # Skip first-name initial if present
+                if i < len(parts) and len(parts[i]) == 1 and parts[i].isalpha():
+                    i += 1
+        else:
+            i += 1
 
 
 # ---------------------------------------------------------------------------
@@ -1092,7 +1156,7 @@ def _parse_plus_minus(pdf, meta: dict, league_id: str) -> dict:
                 "league_id": league_id,
                 "team_id": current_team_id,
                 "player_id": player_id,
-                "player_name": player_name,
+                "full_name": player_name,
                 "shirt_number": jersey,
                 "team_name": current_team_name,
                 "mins_on": m.group(3),
