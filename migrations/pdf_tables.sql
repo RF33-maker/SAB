@@ -52,6 +52,8 @@ ALTER TABLE game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
 
 -- ========================================
 -- LINEUP STATS (PDF: Line Up Analysis)
+-- Created in BOTH public and test schemas so the PDF parser (test schema)
+-- and any production queries (public schema) can use the same table shape.
 -- ========================================
 
 CREATE TABLE IF NOT EXISTS public.lineup_stats (
@@ -74,8 +76,29 @@ CREATE TABLE IF NOT EXISTS public.lineup_stats (
     created_at          timestamptz DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS test.lineup_stats (
+    id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    game_key            text NOT NULL,
+    league_id           uuid,
+    team_id             uuid,
+    team_name           text,
+    lineup              text NOT NULL,
+    time_on_court       text,
+    score               text,
+    score_diff          integer,
+    pts_per_min         numeric,
+    rebounds            integer,
+    steals              integer,
+    turnovers           integer,
+    assists             integer,
+    source_type         text DEFAULT 'pdf',
+    identifier_duplicate text UNIQUE,
+    created_at          timestamptz DEFAULT now()
+);
+
 -- ========================================
 -- PLAYER PLUS/MINUS (PDF: Player Plus/Minus Summary)
+-- Created in BOTH public and test schemas.
 -- ========================================
 
 CREATE TABLE IF NOT EXISTS public.player_plus_minus (
@@ -109,8 +132,40 @@ CREATE TABLE IF NOT EXISTS public.player_plus_minus (
     created_at          timestamptz DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS test.player_plus_minus (
+    id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    game_key            text NOT NULL,
+    league_id           uuid,
+    team_id             uuid,
+    player_id           uuid,
+    full_name           text,
+    player_name         text GENERATED ALWAYS AS (full_name) STORED,
+    shirt_number        text,
+    team_name           text,
+    mins_on             text,
+    mins_off            text,
+    score_on            text,
+    score_off           text,
+    pts_diff_on         integer,
+    pts_diff_off        integer,
+    pts_per_min_on      numeric,
+    pts_per_min_off     numeric,
+    assists_on          integer,
+    assists_off         integer,
+    rebounds_on         integer,
+    rebounds_off        integer,
+    steals_on           integer,
+    steals_off          integer,
+    turnovers_on        integer,
+    turnovers_off       integer,
+    source_type         text DEFAULT 'pdf',
+    identifier_duplicate text UNIQUE,
+    created_at          timestamptz DEFAULT now()
+);
+
 -- ========================================
 -- ROTATIONS SUMMARY (PDF: Rotations Summary)
+-- Created in BOTH public and test schemas.
 -- ========================================
 
 CREATE TABLE IF NOT EXISTS public.rotations_summary (
@@ -118,6 +173,29 @@ CREATE TABLE IF NOT EXISTS public.rotations_summary (
     game_key            text NOT NULL,
     league_id           uuid REFERENCES leagues(league_id),
     team_id             uuid REFERENCES teams(team_id),
+    team_name           text,
+    lineup              text NOT NULL,
+    quarter_on          integer,
+    time_on             text,
+    quarter_off         integer,
+    time_off            text,
+    time_on_court       text,
+    score               text,
+    score_diff          integer,
+    rebounds            integer,
+    steals              integer,
+    turnovers           integer,
+    assists             integer,
+    source_type         text DEFAULT 'pdf',
+    identifier_duplicate text UNIQUE,
+    created_at          timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS test.rotations_summary (
+    id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    game_key            text NOT NULL,
+    league_id           uuid,
+    team_id             uuid,
     team_name           text,
     lineup              text NOT NULL,
     quarter_on          integer,

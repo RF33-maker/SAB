@@ -413,8 +413,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         except (TypeError, ValueError):
             pass
     if _officials:
-        import json as _json
-        _sched_extra["officials"] = _json.dumps(_officials)
+        _sched_extra["officials"] = _officials
     if _sched_extra:
         try:
             game_db.table("game_schedule").update(_sched_extra).eq("game_key", game_key).execute()
@@ -439,8 +438,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             team_record[db_key] = team.get(json_key)
         lds = team.get("lds")
         if lds:
-            import json as _json
-            team_record["game_leaders_json"] = _json.dumps(lds)
+            team_record["game_leaders_json"] = lds
         team_records.append(team_record)
 
     insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")
