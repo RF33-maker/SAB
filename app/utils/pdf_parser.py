@@ -977,58 +977,89 @@ def _normalize_lineup(raw: str) -> str:
     return " / ".join(parts)
 
 
+def _resolve_team_from_meta(meta: dict, league_id: str, user_id=None) -> dict:
+    """
+    Pre-resolve home and away team IDs from the PDF header metadata.
+    Returns {"home": (name, team_id), "away": (name, team_id)}.
+    """
+    result = {}
+    for side in ("home", "away"):
+        raw = meta.get(f"{side}_team_full") or ""
+        name = normalize_team_name(raw) if raw else None
+        tid = get_or_create_team(league_id, name, user_id) if name else None
+        result[side] = (name, tid)
+    return result
+
+
+def _is_known_team_header(line_s: str, known_names: list) -> str | None:
+    """
+    Check if a stripped line exactly matches one of the known team full names
+    (after normalisation). Returns the matched name or None.
+    """
+    norm = normalize_team_name(line_s)
+    for kn in known_names:
+        if kn and norm and kn.lower() == norm.lower():
+            return kn
+    return None
+
+
 def _parse_lineup(pdf, meta: dict, league_id: str) -> dict:
     """
     Parse Line Up Analysis PDF into lineup_stats records.
+    Uses metadata-derived team names as anchors for section detection.
     """
     game_key = meta["game_key"]
+    team_map = _resolve_team_from_meta(meta, league_id)
+    home_name, home_tid = team_map["home"]
+    away_name, away_tid = team_map["away"]
+    known_names = [n for n in (home_name, away_name) if n]
+
     current_team_name = None
     current_team_id = None
     records = []
-    HEADER_SENTINEL = {"Lineup", "Time", "Score"}
+
+    PAGE_HEADER_TOKENS = {
+        "WEABL", "Essex", "Game", "Report", "Crew", "Scoring", "Q1", "Q2", "Q3", "Q4",
+    }
 
     for page in pdf.pages:
         text = page.extract_text() or ""
-        lines = text.split("\n")
-        in_header = True
+        in_page_header = True
 
-        for line in lines:
+        for line in text.split("\n"):
             line_s = line.strip()
             if not line_s:
                 continue
 
-            # Skip per-page header block (first N lines before data)
-            if in_header:
-                words = set(line_s.split())
-                if HEADER_SENTINEL.issubset(words):
-                    in_header = False
-                # Detect team section header before "Lineup Time..." column header
-                team_m = re.match(r"^(.+?)\s*(?:\([A-Z]{2,5}\))?\s*$", line_s)
-                if team_m and not re.search(r"\d", line_s) and len(line_s) > 5:
-                    candidate = normalize_team_name(line_s)
-                    if candidate and "Scoring" not in candidate and "Crew" not in candidate and "Q1" not in candidate:
-                        current_team_name = candidate
-                        try:
-                            current_team_id = get_or_create_team(league_id, current_team_name)
-                        except Exception as e:
-                            log.warning("Could not resolve team '%s': %s", current_team_name, e)
-                            current_team_id = None
+            # Skip the per-page report header block
+            if in_page_header:
+                words_first = line_s.split()[0] if line_s.split() else ""
+                # Column header signals end of per-page header
+                if {"Lineup", "Time", "Score"}.issubset(set(line_s.split())):
+                    in_page_header = False
+                    continue
+                # Detect a known team section header inside the header block too
+                matched = _is_known_team_header(line_s, known_names)
+                if matched:
+                    name_norm = normalize_team_name(matched)
+                    if name_norm == normalize_team_name(home_name or ""):
+                        current_team_name, current_team_id = home_name, home_tid
+                    else:
+                        current_team_name, current_team_id = away_name, away_tid
                 continue
 
-            # Team section header (no digits, after header)
-            if not re.search(r"\d", line_s):
-                candidate = normalize_team_name(line_s)
-                if candidate and len(candidate) > 5 and "Lineup" not in candidate:
-                    current_team_name = candidate
-                    try:
-                        current_team_id = get_or_create_team(league_id, current_team_name)
-                    except Exception:
-                        current_team_id = None
+            # Column header row — skip
+            if {"Lineup", "Time"}.issubset(set(line_s.split())):
                 continue
 
-            # Skip column header row
-            words_set = set(line_s.split())
-            if {"Lineup", "Time"}.issubset(words_set):
+            # Team section header: must match a known team name exactly
+            matched = _is_known_team_header(line_s, known_names)
+            if matched:
+                name_norm = normalize_team_name(matched)
+                if name_norm == normalize_team_name(home_name or ""):
+                    current_team_name, current_team_id = home_name, home_tid
+                else:
+                    current_team_name, current_team_id = away_name, away_tid
                 continue
 
             # Lineup data row
@@ -1082,66 +1113,63 @@ _PM_DATA_RE = re.compile(
 def _parse_plus_minus(pdf, meta: dict, league_id: str) -> dict:
     """
     Parse Player Plus/Minus Summary PDF into player_plus_minus records.
+    Uses metadata-derived team names as anchors for section detection.
+    Identifier: game_key + player_id for correct deduplication semantics.
     """
     game_key = meta["game_key"]
+    team_map = _resolve_team_from_meta(meta, league_id)
+    home_name, home_tid = team_map["home"]
+    away_name, away_tid = team_map["away"]
+    known_names = [n for n in (home_name, away_name) if n]
+
     current_team_name = None
     current_team_id = None
     records = []
+    in_section = False
+    skip_col_header = 0
 
-    DATA_HEADERS = {"Mins", "Score", "Points", "Diff", "Assists", "Rebounds", "Steals", "Turnovers"}
+    DATA_HEADER_WORDS = {"Mins", "Score", "Points", "Diff", "Assists", "Rebounds", "Steals", "Turnovers", "On", "Off", "No", "Name"}
 
     for page in pdf.pages:
         text = page.extract_text() or ""
-        in_section = False
-        skip_header = False
 
         for line in text.split("\n"):
             line_s = line.strip()
             if not line_s:
                 continue
 
-            # Skip per-page report header lines
-            if any(
-                line_s.startswith(x)
-                for x in ["WEABL", "Essex Sport Arena", "Game No.", "Game Duration",
-                           "City of London", "Copleston", "Report Generated",
-                           "Crew Chief", "Scoring by", "Q1 Q2", "(20-", "("]
-            ):
-                in_section = False
+            # Team section header: matched against known names from PDF header
+            matched = _is_known_team_header(line_s, known_names)
+            if matched:
+                name_norm = normalize_team_name(matched)
+                if name_norm == normalize_team_name(home_name or ""):
+                    current_team_name, current_team_id = home_name, home_tid
+                else:
+                    current_team_name, current_team_id = away_name, away_tid
+                in_section = True
+                skip_col_header = 2  # skip the 2 column header lines that follow
                 continue
 
-            # Team section header (no digits, reasonable length)
-            if not re.search(r"\d", line_s) and len(line_s) > 5:
-                candidate = normalize_team_name(line_s)
-                if candidate and "Player" not in candidate and "Plus" not in candidate:
-                    current_team_name = candidate
-                    try:
-                        current_team_id = get_or_create_team(league_id, current_team_name)
-                    except Exception:
-                        current_team_id = None
-                    in_section = True
-                    skip_header = True
+            if skip_col_header > 0:
+                # Skip "Mins Score Points Diff..." and "On Off On Off..." header rows
+                if set(line_s.split()) & DATA_HEADER_WORDS:
+                    skip_col_header -= 1
                     continue
-
-            if skip_header:
-                # Skip the two header rows (Mins, Score... and On, Off...)
-                words = set(line_s.split())
-                if words & DATA_HEADERS:
-                    continue
-                if words & {"On", "Off", "No", "Name"}:
-                    continue
-                skip_header = False
+                skip_col_header = 0
 
             if not in_section:
                 continue
 
             m = _PM_DATA_RE.match(line_s)
             if not m:
+                # If we hit a line that looks like a new team header or page header, reset
+                if not re.search(r"\d", line_s) and len(line_s) > 3:
+                    if set(line_s.split()) & DATA_HEADER_WORDS:
+                        skip_col_header = 1
                 continue
 
             jersey = m.group(1)
             player_name = m.group(2).strip()
-            ident = f"{game_key}_{_short_hash(f'{current_team_id}{player_name}')}"
 
             player_id = None
             try:
@@ -1150,6 +1178,9 @@ def _parse_plus_minus(pdf, meta: dict, league_id: str) -> dict:
                 )
             except Exception as e:
                 log.warning("Could not resolve player '%s': %s", player_name, e)
+
+            # Identifier: game_key + player_id (required uniqueness semantics)
+            ident = f"{game_key}_{player_id or _short_hash(f'{current_team_id}{player_name}')}"
 
             records.append({
                 "game_key": game_key,
@@ -1196,20 +1227,23 @@ _ROT_STATS_RE = re.compile(
 def _parse_rotations(pdf, meta: dict, league_id: str) -> dict:
     """
     Parse Rotations Summary PDF into rotations_summary records.
-
+    Uses metadata-derived team names as anchors for section detection.
     The lineup can wrap over multiple text lines; a stats line (matching
     _ROT_STATS_RE) always follows the complete lineup.
     """
     game_key = meta["game_key"]
+    team_map = _resolve_team_from_meta(meta, league_id)
+    home_name, home_tid = team_map["home"]
+    away_name, away_tid = team_map["away"]
+    known_names = [n for n in (home_name, away_name) if n]
+
     current_team_name = None
     current_team_id = None
     records = []
     lineup_buffer = []
 
-    SKIP_WORDS = {
-        "Quarter", "Time", "Lineup", "Score", "Reb", "Stl", "Tov", "Ass",
-        "On", "Off", "Court", "Diff", "RebStlTovAss",
-    }
+    COL_HEADER_WORDS = {"Quarter", "Time", "Lineup", "Score", "Reb", "Stl", "Tov", "Ass",
+                        "On", "Off", "Court", "Diff", "RebStlTovAss"}
 
     def flush_lineup():
         nonlocal lineup_buffer
@@ -1223,29 +1257,16 @@ def _parse_rotations(pdf, meta: dict, league_id: str) -> dict:
             if not line_s:
                 continue
 
-            # Skip per-page report header
-            if any(
-                line_s.startswith(x)
-                for x in ["WEABL", "Essex Sport Arena", "Game No.", "Game Duration",
-                           "City of London", "Copleston", "Report Generated",
-                           "Crew Chief", "Scoring by", "Q1 Q2", "(20-", "("]
-            ):
+            # Team section header: matched against known names from PDF header
+            matched = _is_known_team_header(line_s, known_names)
+            if matched:
                 flush_lineup()
+                name_norm = normalize_team_name(matched)
+                if name_norm == normalize_team_name(home_name or ""):
+                    current_team_name, current_team_id = home_name, home_tid
+                else:
+                    current_team_name, current_team_id = away_name, away_tid
                 continue
-
-            # Team section header
-            if not re.search(r"\d", line_s) and len(line_s) > 5:
-                words_set = set(line_s.split())
-                if not (words_set & SKIP_WORDS):
-                    candidate = normalize_team_name(line_s)
-                    if candidate and len(candidate) > 5:
-                        flush_lineup()
-                        current_team_name = candidate
-                        try:
-                            current_team_id = get_or_create_team(league_id, current_team_name)
-                        except Exception:
-                            current_team_id = None
-                        continue
 
             # Skip pure column header rows
             words_set = set(line_s.split())
@@ -1260,10 +1281,10 @@ def _parse_rotations(pdf, meta: dict, league_id: str) -> dict:
                 lineup_str = _normalize_lineup(raw_lineup)
                 flush_lineup()
 
-                if not lineup_str:
+                if not lineup_str or current_team_id is None:
                     continue
 
-                ident = f"{game_key}_{_short_hash(lineup_str + m.group(1) + m.group(2))}_{current_team_id or 'none'}"
+                ident = f"{game_key}_{_short_hash(lineup_str + m.group(1) + m.group(2))}_{current_team_id}"
 
                 records.append({
                     "game_key": game_key,

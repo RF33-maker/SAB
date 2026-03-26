@@ -13,42 +13,66 @@
 -- tot_timesscoreslevel columns stay — only the Python-side JSON key lookup is fixed.
 
 -- New: tot_sBiggestLead (was entirely missing from TEAM_FIELD_MAP)
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sbiggestlead text;
+-- Applied to both public and test schemas
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sbiggestlead text;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sbiggestlead text;
 
--- New: unmapped team fields now added to schema
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sfoulson numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sfoulstotal numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sfoulsteam numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteam numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamdefensive numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamoffensive numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_sturnovers_team numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_1 numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_2 numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_3 numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_4 numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_5 numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_6 numeric;
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS tot_eff_7 numeric;
+-- New: unmapped team fields
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sfoulson numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sfoulstotal numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sfoulsteam numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteam numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamdefensive numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamoffensive numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_sturnovers_team numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_1 numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_2 numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_3 numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_4 numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_5 numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_6 numeric;
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS tot_eff_7 numeric;
 
--- Game leaders JSON (from 'lds' field in LiveStats JSON)
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS game_leaders_json jsonb;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sfoulson numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sfoulstotal numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sfoulsteam numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteam numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamdefensive numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sreboundsteamoffensive numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_sturnovers_team numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_1 numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_2 numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_3 numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_4 numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_5 numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_6 numeric;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_7 numeric;
+
+-- Game leaders JSON
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS game_leaders_json jsonb;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS game_leaders_json jsonb;
+
+-- Source tag
+ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS source_type text;
 
 -- ========================================
 -- LIVE EVENTS - Add score_diff for PDF PBP
+-- Applied to both schemas
 -- ========================================
 
-ALTER TABLE live_events ADD COLUMN IF NOT EXISTS score_diff integer;
-
--- Source tag: 'json' or 'pdf'
-ALTER TABLE team_stats ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE public.live_events ADD COLUMN IF NOT EXISTS score_diff integer;
+ALTER TABLE test.live_events ADD COLUMN IF NOT EXISTS score_diff integer;
 
 -- ========================================
 -- GAME SCHEDULE - Attendance & Officials
+-- Applied to both schemas
 -- ========================================
 
-ALTER TABLE game_schedule ADD COLUMN IF NOT EXISTS attendance integer;
-ALTER TABLE game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
+ALTER TABLE public.game_schedule ADD COLUMN IF NOT EXISTS attendance integer;
+ALTER TABLE public.game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
+ALTER TABLE test.game_schedule ADD COLUMN IF NOT EXISTS attendance integer;
+ALTER TABLE test.game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
 
 -- ========================================
 -- LINEUP STATS (PDF: Line Up Analysis)
