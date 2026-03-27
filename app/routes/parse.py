@@ -73,10 +73,33 @@ def handle_parse():
 
         file_path = data.get("file_path")
         user_id = data.get("user_id")
+        league_name = data.get("league_name", "").strip() or None
 
         if not file_path or not user_id:
             log.warning("Missing file_path or user_id")
             return jsonify({"error": "file_path and user_id are required"}), 400
+
+        # Auto-detect PDF by downloading and checking magic bytes
+        file_bytes = None
+        try:
+            bucket, filename = file_path.split("/", 1)
+            file_bytes = supabase.storage.from_(bucket).download(filename)
+        except Exception:
+            pass  # fall through to run_from_excel which handles local paths too
+
+        if file_bytes and file_bytes[:4] == b"%PDF":
+            log.info("PDF detected in /api/parse — routing to PDF parser: %s", file_path)
+            from app.utils.pdf_parser import parse_pdf
+            import io
+            result = parse_pdf(
+                pdf_file=io.BytesIO(file_bytes),
+                league_name=league_name or "Unknown",
+                user_id=user_id,
+            )
+            if "error" in result:
+                log.error("PDF parse error: %s", result["error"])
+                return jsonify(result), 500
+            return jsonify({"status": "success", **result})
 
         log.info("Parsing Excel file for user=%s path=%s", user_id, file_path)
 
