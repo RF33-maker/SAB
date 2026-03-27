@@ -284,8 +284,18 @@ def get_or_create_league(name: str, user_id: str = None):
     insert_data = {"name": name}
     if user_id:
         insert_data["created_by"] = user_id
-    new = ref_db.table("leagues").insert(insert_data).execute()
-    return new.data[0]["league_id"]
+    try:
+        new = ref_db.table("leagues").insert(insert_data).execute()
+        return new.data[0]["league_id"]
+    except Exception as e:
+        # Slug uniqueness collision (23505) — another row with same derived slug exists.
+        # Fall back to fetching by name again (race condition or duplicate slug).
+        err_str = str(e)
+        if "23505" in err_str or "duplicate key" in err_str.lower():
+            retry = ref_db.table("leagues").select("league_id").eq("name", name).execute()
+            if retry.data:
+                return retry.data[0]["league_id"]
+        raise
 
 def get_or_create_team(league_id: str, name: str, user_id: str = None):
     normalized_name = normalize_team_name(name)

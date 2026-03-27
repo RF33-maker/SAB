@@ -1380,6 +1380,19 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
                 return {"error": "Could not extract Game No. from PDF header"}
 
             game_key = meta["game_key"]
+
+            # If no league_name provided (or generic fallback), derive from PDF header.
+            # meta["competition"] is e.g. "WEABL 2025-26" — use it directly.
+            if not league_name or league_name.lower() in ("unknown", ""):
+                competition = meta.get("competition") or ""
+                # Strip common report-type suffixes to get the base league name
+                for suffix in [
+                    " Play by Play", " Line Up Analysis", " Player Plus/Minus",
+                    " Rotations Summary", " Shot Chart", " Shot Areas", " Box Score",
+                ]:
+                    competition = competition.replace(suffix, "")
+                league_name = competition.strip() or "Unknown"
+
             print(f"🏀 PDF parse: type={report_type}, game_key={game_key}, league={league_name}")
 
             league_id = get_or_create_league(league_name, user_id)
