@@ -277,24 +277,41 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
 # ----------------------------
 # Entity Get-or-Create
 # ----------------------------
+def _slugify(text: str) -> str:
+    """Convert a league name to a URL-safe slug, e.g. 'WEABL 2025-26' → 'weabl-2025-26'."""
+    import re as _re
+    slug = text.lower().strip()
+    slug = _re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    return slug or "league"
+
+
 def get_or_create_league(name: str, user_id: str = None):
     res = ref_db.table("leagues").select("league_id").eq("name", name).execute()
     if res.data:
         return res.data[0]["league_id"]
-    insert_data = {"name": name}
+
+    slug = _slugify(name)
+    insert_data = {"name": name, "slug": slug}
     if user_id:
         insert_data["created_by"] = user_id
+
     try:
         new = ref_db.table("leagues").insert(insert_data).execute()
         return new.data[0]["league_id"]
     except Exception as e:
-        # Slug uniqueness collision (23505) — another row with same derived slug exists.
-        # Fall back to fetching by name again (race condition or duplicate slug).
+        # Slug collision (23505) — slug already taken. Try appending a short suffix.
         err_str = str(e)
         if "23505" in err_str or "duplicate key" in err_str.lower():
+            # Re-check by name first (race condition)
             retry = ref_db.table("leagues").select("league_id").eq("name", name).execute()
             if retry.data:
                 return retry.data[0]["league_id"]
+            # Try slug with numeric suffix
+            import uuid as _uuid
+            insert_data["slug"] = f"{slug}-{str(_uuid.uuid4())[:8]}"
+            fallback = ref_db.table("leagues").insert(insert_data).execute()
+            return fallback.data[0]["league_id"]
         raise
 
 def get_or_create_team(league_id: str, name: str, user_id: str = None):
