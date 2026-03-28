@@ -613,6 +613,9 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
         player_data = _parse_box_score_row(line_s)
         if player_data:
             current_section["players"].append(player_data)
+        elif re.match(r"^\*?\d+\s+\S", line_s) and "/" in line_s:
+            # Looks like a player row but didn't match — print for diagnosis
+            print(f"🔍 UNMATCHED PLAYER ROW: {repr(line_s)}")
 
     if current_section:
         team_sections.append(current_section)
