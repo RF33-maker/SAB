@@ -73,28 +73,69 @@ REPORT_TYPES = {
 SKIP_TYPES = {"shot_chart", "shot_areas"}
 
 
+def _strip_unknown_col(error_msg: str) -> str | None:
+    """Extract the missing column name from a PGRST204 error message."""
+    m = re.search(r"Could not find the '(\w+)' column", str(error_msg))
+    return m.group(1) if m else None
+
+
+def _drop_col(records: list, col: str) -> list:
+    """Remove a key from every record dict."""
+    return [{k: v for k, v in r.items() if k != col} for r in records]
+
+
 def _upsert(table: str, records: list, conflict_col: str) -> int:
-    """Upsert records into the test schema. Raises on failure."""
+    """
+    Upsert records into the test schema.
+    Auto-strips any column the table doesn't have yet (PGRST204) and retries.
+    """
     if not records:
         return 0
     db = _get_pdf_game_db()
-    db.table(table).upsert(records, on_conflict=conflict_col).execute()
-    log.info("PDF: Upserted %d rows into test.%s", len(records), table)
-    return len(records)
+    max_retries = 20
+    for attempt in range(max_retries):
+        try:
+            db.table(table).upsert(records, on_conflict=conflict_col).execute()
+            log.info("PDF: Upserted %d rows into test.%s", len(records), table)
+            return len(records)
+        except Exception as e:
+            col = _strip_unknown_col(str(e))
+            if col and "PGRST204" in str(e):
+                log.warning("PDF: test.%s missing column '%s' — stripping and retrying", table, col)
+                records = _drop_col(records, col)
+            else:
+                raise
+    raise RuntimeError(f"_upsert: too many retries for test.{table}")
 
 
 def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
-    """Insert records in chunks into the test schema. Raises on any chunk failure."""
+    """
+    Insert records in chunks into the test schema.
+    Auto-strips any column the table doesn't have yet (PGRST204) and retries
+    the entire batch from scratch with the offending column removed.
+    """
     if not records:
         return 0
     db = _get_pdf_game_db()
-    inserted = 0
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
-        db.table(table).insert(chunk).execute()
-        inserted += len(chunk)
-    log.info("PDF: Inserted %d rows into test.%s", inserted, table)
-    return inserted
+    max_retries = 20
+
+    for attempt in range(max_retries):
+        try:
+            inserted = 0
+            for i in range(0, len(records), chunk_size):
+                chunk = records[i : i + chunk_size]
+                db.table(table).insert(chunk).execute()
+                inserted += len(chunk)
+            log.info("PDF: Inserted %d rows into test.%s", inserted, table)
+            return inserted
+        except Exception as e:
+            col = _strip_unknown_col(str(e))
+            if col and "PGRST204" in str(e):
+                log.warning("PDF: test.%s missing column '%s' — stripping and retrying", table, col)
+                records = _drop_col(records, col)
+            else:
+                raise
+    raise RuntimeError(f"_insert_batch: too many retries for test.{table}")
 
 
 def _short_hash(text: str, length: int = 8) -> str:
