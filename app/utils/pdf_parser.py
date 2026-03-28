@@ -87,7 +87,8 @@ def _drop_col(records: list, col: str) -> list:
 def _upsert(table: str, records: list, conflict_col: str) -> int:
     """
     Upsert records into the test schema.
-    Auto-strips any column the table doesn't have yet (PGRST204) and retries.
+    - Auto-strips unknown columns (PGRST204) and retries.
+    - Falls back to insert with ignore_duplicates if UNIQUE constraint missing (42P10).
     """
     if not records:
         return 0
@@ -99,12 +100,20 @@ def _upsert(table: str, records: list, conflict_col: str) -> int:
             log.info("PDF: Upserted %d rows into test.%s", len(records), table)
             return len(records)
         except Exception as e:
-            col = _strip_unknown_col(str(e))
-            if col and "PGRST204" in str(e):
-                log.warning("PDF: test.%s missing column '%s' — stripping and retrying", table, col)
-                records = _drop_col(records, col)
-            else:
-                raise
+            err_str = str(e)
+            if "PGRST204" in err_str:
+                col = _strip_unknown_col(err_str)
+                if col:
+                    log.warning("PDF: test.%s missing column '%s' — stripping and retrying", table, col)
+                    records = _drop_col(records, col)
+                    continue
+            if "42P10" in err_str:
+                # No unique constraint on conflict column — fall back to insert ignore
+                log.warning("PDF: test.%s has no UNIQUE constraint on '%s' — using insert ignore", table, conflict_col)
+                db.table(table).insert(records, count="exact").execute()
+                log.info("PDF: Inserted %d rows into test.%s (no-constraint fallback)", len(records), table)
+                return len(records)
+            raise
     raise RuntimeError(f"_upsert: too many retries for test.{table}")
 
 
