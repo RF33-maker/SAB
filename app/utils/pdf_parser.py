@@ -609,7 +609,6 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
             "name": team_name,
             "side": side,
             "score": meta.get("home_score") if side == "1" else meta.get("away_score"),
-            "source_type": "pdf",
             "identifier_duplicate": f"{game_key}_{team_id}",
         }
         team_rec.update(section["totals"])
@@ -652,7 +651,6 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
                 "full_name": full_name,
                 "team_name": team_name,
                 "side": side,
-                "source_type": "pdf",
                 "identifier_duplicate": f"{game_key}_{player_id}",
             }
             for k, v in p.items():
@@ -931,7 +929,6 @@ def _parse_pbp(pdf, meta: dict, league_id: str, home_team_id: str, away_team_id:
             "description": text,
             "score": running_score,
             "score_diff": running_diff,
-            "source_type": "pdf",
         })
 
     if not events:
