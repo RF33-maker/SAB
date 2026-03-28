@@ -97,21 +97,21 @@ def _upsert(table: str, records: list, conflict_col: str) -> int:
     for attempt in range(max_retries):
         try:
             db.table(table).upsert(records, on_conflict=conflict_col).execute()
-            log.info("PDF: Upserted %d rows into test.%s", len(records), table)
+            print(f"✅  PDF: Upserted {len(records)} rows into test.{table}")
             return len(records)
         except Exception as e:
             err_str = str(e)
             if "PGRST204" in err_str:
                 col = _strip_unknown_col(err_str)
                 if col:
-                    log.warning("PDF: test.%s missing column '%s' — stripping and retrying", table, col)
+                    print(f"⚠️  PDF: test.{table} missing column '{col}' — stripping and retrying")
                     records = _drop_col(records, col)
                     continue
             if "42P10" in err_str:
                 # No unique constraint on conflict column — fall back to insert ignore
-                log.warning("PDF: test.%s has no UNIQUE constraint on '%s' — using insert ignore", table, conflict_col)
+                print(f"⚠️  PDF: test.{table} no UNIQUE constraint on '{conflict_col}' — using insert ignore")
                 db.table(table).insert(records, count="exact").execute()
-                log.info("PDF: Inserted %d rows into test.%s (no-constraint fallback)", len(records), table)
+                print(f"✅  PDF: Inserted {len(records)} rows into test.{table} (no-constraint fallback)")
                 return len(records)
             raise
     raise RuntimeError(f"_upsert: too many retries for test.{table}")
@@ -135,12 +135,13 @@ def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
                 chunk = records[i : i + chunk_size]
                 db.table(table).insert(chunk).execute()
                 inserted += len(chunk)
-            log.info("PDF: Inserted %d rows into test.%s", inserted, table)
+            print(f"✅  PDF: Inserted {inserted} rows into test.{table}")
             return inserted
         except Exception as e:
-            col = _strip_unknown_col(str(e))
-            if col and "PGRST204" in str(e):
-                log.warning("PDF: test.%s missing column '%s' — stripping and retrying", table, col)
+            err_str = str(e)
+            col = _strip_unknown_col(err_str)
+            if col and "PGRST204" in err_str:
+                print(f"⚠️  PDF: test.{table} missing column '{col}' — stripping and retrying")
                 records = _drop_col(records, col)
             else:
                 raise
