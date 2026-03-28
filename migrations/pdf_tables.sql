@@ -52,9 +52,29 @@ ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS tot_eff_7 numeric;
 ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS game_leaders_json jsonb;
 ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS game_leaders_json jsonb;
 
--- Source tag
+-- Source tag (team_stats)
 ALTER TABLE public.team_stats ADD COLUMN IF NOT EXISTS source_type text;
 ALTER TABLE test.team_stats ADD COLUMN IF NOT EXISTS source_type text;
+
+-- ========================================
+-- PLAYER STATS - Add PDF-specific columns
+-- ========================================
+
+-- source_type: tracks whether row came from 'json' or 'pdf'
+ALTER TABLE public.player_stats ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE test.player_stats ADD COLUMN IF NOT EXISTS source_type text;
+
+-- starter: whether the player started the game (PDF box score only)
+ALTER TABLE public.player_stats ADD COLUMN IF NOT EXISTS starter boolean;
+ALTER TABLE test.player_stats ADD COLUMN IF NOT EXISTS starter boolean;
+
+-- eff_1: efficiency stat from PDF box score (rightmost column before PTS)
+ALTER TABLE public.player_stats ADD COLUMN IF NOT EXISTS eff_1 integer;
+ALTER TABLE test.player_stats ADD COLUMN IF NOT EXISTS eff_1 integer;
+
+-- sfoulson: fouls drawn (FD column in PDF box score)
+ALTER TABLE public.player_stats ADD COLUMN IF NOT EXISTS sfoulson integer;
+ALTER TABLE test.player_stats ADD COLUMN IF NOT EXISTS sfoulson integer;
 
 -- ========================================
 -- LIVE EVENTS - Add score_diff for PDF PBP
