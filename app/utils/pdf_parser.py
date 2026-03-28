@@ -327,7 +327,7 @@ _BS_ROW_RE = re.compile(
     r"(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+"
     r"(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+"
     r"(-?\d+)\s+(-?\d+)\s+"
-    r"(-?\d+)\s+(-?\d+)\s+(-?\d+)$"
+    r"(-?\d+)\s+(?:(-?\d+)\s+)?(-?\d+)$"
 )
 
 _BS_TOTALS_RE = re.compile(
@@ -339,7 +339,7 @@ _BS_TOTALS_RE = re.compile(
     r"(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+"
     r"(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+"
     r"(-?\d+)\s+(-?\d+)\s+"
-    r"(-?\d+)\s+(-?\d+)\s+(-?\d+)$"
+    r"(-?\d+)\s+(?:(-?\d+)\s+)?(-?\d+)$"
 )
 
 _BS_TEAM_RE = re.compile(r"^Team/Coach\s+(.*)")
@@ -412,7 +412,7 @@ def _parse_box_score_row(line: str):
         "sfoulspersonal": _safe_int(m.group(20)),
         "sfoulson": _safe_int(m.group(21)),
         "splusminuspoints": _safe_int(m.group(22)),
-        "eff_1": _safe_int(m.group(23)),
+        "eff_1": _safe_int(m.group(23)),   # None when EF column absent
         "spoints": _safe_int(m.group(24)),
     }
 
@@ -453,7 +453,7 @@ def _parse_totals_row(line: str):
         "tot_sfoulspersonal": _safe_int(m.group(17)),
         "tot_sfoulson": _safe_int(m.group(18)),
         "splusminuspoints": _safe_int(m.group(19)),
-        "tot_eff_1": _safe_int(m.group(20)),
+        "tot_eff_1": _safe_int(m.group(20)),   # None when EF column absent
         "tot_spoints": _safe_int(m.group(21)),
     }
 
