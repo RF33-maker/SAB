@@ -113,6 +113,12 @@ def _upsert(table: str, records: list, conflict_col: str) -> int:
                 db.table(table).insert(records, count="exact").execute()
                 print(f"✅  PDF: Inserted {len(records)} rows into public.{table} (no-constraint fallback)")
                 return len(records)
+            if "23503" in err_str:
+                raise RuntimeError(
+                    f"Foreign key violation on public.{table} — a referenced row is missing. "
+                    f"Drop the FK constraint in Supabase: "
+                    f"ALTER TABLE public.{table} DROP CONSTRAINT IF EXISTS fk_{table.replace('_','')}gamekey;"
+                ) from e
             raise
     raise RuntimeError(f"_upsert: too many retries for public.{table}")
 
