@@ -3,16 +3,16 @@ pdf_parser.py
 Genius Sports post-game PDF ingestion pipeline.
 
 Supported types:
-  - FIBA Box Score       → player_stats + team_stats (test schema)
-  - Play by Play         → live_events (test schema)
-  - Line Up Analysis     → lineup_stats (test schema)
-  - Player Plus/Minus    → player_plus_minus (test schema)
-  - Rotations Summary    → rotations_summary (test schema)
+  - FIBA Box Score       → player_stats + team_stats (public schema)
+  - Play by Play         → live_events (public schema)
+  - Line Up Analysis     → lineup_stats (public schema)
+  - Player Plus/Minus    → player_plus_minus (public schema)
+  - Rotations Summary    → rotations_summary (public schema)
   - Shot Chart           → skip (image-based, no extractable data)
   - Shot Areas           → skip (image-based, no extractable data)
 
 game_key format for PDFs: PDF_{game_no}  e.g. PDF_5193600
-All data is written to the 'test' schema regardless of DB_SCHEMA env var.
+All game data is written to the 'public' schema.
 """
 
 import os
@@ -46,7 +46,7 @@ def _get_pdf_game_db() -> Client:
     global _pdf_game_db
     if _pdf_game_db is None:
         _pdf_game_db = create_client(
-            SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema="test")
+            SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(schema="public")
         )
     return _pdf_game_db
 
@@ -86,7 +86,7 @@ def _drop_col(records: list, col: str) -> list:
 
 def _upsert(table: str, records: list, conflict_col: str) -> int:
     """
-    Upsert records into the test schema.
+    Upsert records into the public schema.
     - Auto-strips unknown columns (PGRST204) and retries.
     - Falls back to insert with ignore_duplicates if UNIQUE constraint missing (42P10).
     """
@@ -97,29 +97,29 @@ def _upsert(table: str, records: list, conflict_col: str) -> int:
     for attempt in range(max_retries):
         try:
             db.table(table).upsert(records, on_conflict=conflict_col).execute()
-            print(f"✅  PDF: Upserted {len(records)} rows into test.{table}")
+            print(f"✅  PDF: Upserted {len(records)} rows into public.{table}")
             return len(records)
         except Exception as e:
             err_str = str(e)
             if "PGRST204" in err_str:
                 col = _strip_unknown_col(err_str)
                 if col:
-                    print(f"⚠️  PDF: test.{table} missing column '{col}' — stripping and retrying")
+                    print(f"⚠️  PDF: public.{table} missing column '{col}' — stripping and retrying")
                     records = _drop_col(records, col)
                     continue
             if "42P10" in err_str:
                 # No unique constraint on conflict column — fall back to insert ignore
-                print(f"⚠️  PDF: test.{table} no UNIQUE constraint on '{conflict_col}' — using insert ignore")
+                print(f"⚠️  PDF: public.{table} no UNIQUE constraint on '{conflict_col}' — using insert ignore")
                 db.table(table).insert(records, count="exact").execute()
-                print(f"✅  PDF: Inserted {len(records)} rows into test.{table} (no-constraint fallback)")
+                print(f"✅  PDF: Inserted {len(records)} rows into public.{table} (no-constraint fallback)")
                 return len(records)
             raise
-    raise RuntimeError(f"_upsert: too many retries for test.{table}")
+    raise RuntimeError(f"_upsert: too many retries for public.{table}")
 
 
 def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
     """
-    Insert records in chunks into the test schema.
+    Insert records in chunks into the public schema.
     Auto-strips any column the table doesn't have yet (PGRST204) and retries
     the entire batch from scratch with the offending column removed.
     """
@@ -135,17 +135,17 @@ def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
                 chunk = records[i : i + chunk_size]
                 db.table(table).insert(chunk).execute()
                 inserted += len(chunk)
-            print(f"✅  PDF: Inserted {inserted} rows into test.{table}")
+            print(f"✅  PDF: Inserted {inserted} rows into public.{table}")
             return inserted
         except Exception as e:
             err_str = str(e)
             col = _strip_unknown_col(err_str)
             if col and "PGRST204" in err_str:
-                print(f"⚠️  PDF: test.{table} missing column '{col}' — stripping and retrying")
+                print(f"⚠️  PDF: public.{table} missing column '{col}' — stripping and retrying")
                 records = _drop_col(records, col)
             else:
                 raise
-    raise RuntimeError(f"_insert_batch: too many retries for test.{table}")
+    raise RuntimeError(f"_insert_batch: too many retries for public.{table}")
 
 
 def _short_hash(text: str, length: int = 8) -> str:

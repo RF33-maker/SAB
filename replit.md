@@ -17,14 +17,14 @@ Key API endpoints include `/api/parse` for file uploads, `/start` and `/reset` f
 ### Data Processing Pipeline
 
 -   **PDF Parsing (Genius Sports post-game PDFs)**: A dedicated ingestion pipeline in `app/utils/pdf_parser.py` handles Genius Sports / FIBA post-game PDF exports produced at Richards Elite and similar events where live JSON stats are unavailable. The pipeline auto-detects report type from the first-page header and routes to sub-parsers:
-    -   **box_score**: Extracts per-player stats (24-column regex), team totals, and footer stats (paint points, bench points, turnovers, fast-break, etc.) → writes to `player_stats` and `team_stats` (test schema).
-    -   **pbp** (play-by-play): Uses layout-based column detection (home ~col 12, away ~col 48) to reconstruct play-by-play events with side attribution → writes to `live_events` (test schema).
-    -   **lineup**: Parses Lineup Analysis tables with multi-line lineup text and per-row stat columns → writes to `lineup_stats` (test schema). Team section detection anchored to metadata-derived team names via `_is_known_team_header`.
-    -   **plus_minus**: Extracts per-player plus/minus summary (mins on/off, pts diff on/off) → writes to `player_plus_minus` (test schema). `identifier_duplicate` keyed on `game_key + player_id`. Team detection anchored to metadata.
-    -   **rotations**: Parses multi-line Rotations Summary blocks (lineup header + stat row) → writes to `rotations_summary` (test schema). Team detection anchored to metadata.
+    -   **box_score**: Extracts per-player stats (24-column regex, EF column optional), team totals, and footer stats (paint points, bench points, turnovers, fast-break, etc.) → writes to `player_stats` and `team_stats` (public schema).
+    -   **pbp** (play-by-play): Uses layout-based column detection (home ~col 12, away ~col 48) to reconstruct play-by-play events with side attribution → writes to `live_events` (public schema).
+    -   **lineup**: Parses Lineup Analysis tables with multi-line lineup text and per-row stat columns → writes to `lineup_stats` (public schema). Team section detection anchored to metadata-derived team names via `_is_known_team_header`.
+    -   **plus_minus**: Extracts per-player plus/minus summary (mins on/off, pts diff on/off) → writes to `player_plus_minus` (public schema). `identifier_duplicate` keyed on `game_key + player_id`. Team detection anchored to metadata.
+    -   **rotations**: Parses multi-line Rotations Summary blocks (lineup header + stat row) → writes to `rotations_summary` (public schema). Team detection anchored to metadata.
     -   **shot_chart / shot_areas**: Correctly detected and skipped (image-only PDFs, no extractable data).
     -   Team linkage: `_resolve_team_from_meta(meta, league_id)` pre-resolves home/away IDs from PDF header; `_is_known_team_header(line, known_names)` matches section headers exactly — no fragile text heuristics.
-    -   game_key defaults to `PDF_{game_no}` from the PDF header. All writes target `test` schema for safety.
+    -   game_key defaults to `PDF_{game_no}` from the PDF header. All writes target `public` schema.
     -   Exposed via the `/api/parse-pdf` endpoint (POST, multipart/form-data: `file`, `league_name`, optional `game_key`/`user_id`).
 -   **Legacy parser.py**: Marked deprecated; all PDF ingestion now uses `pdf_parser.py`.
 -   **PDF schema additions** (`migrations/pdf_tables.sql`): 15 new `team_stats` columns (paint pts, bench pts, turnovers, fast-break, etc.), attendance/officials on `game_schedule`, and 3 new tables: `lineup_stats`, `player_plus_minus`, `rotations_summary`.
