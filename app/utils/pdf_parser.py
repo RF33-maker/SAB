@@ -154,6 +154,45 @@ def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
     raise RuntimeError(f"_insert_batch: too many retries for public.{table}")
 
 
+def _ensure_game_schedule_stub(game_key: str, meta: dict, league_id: str) -> None:
+    """
+    Insert a minimal game_schedule row so FK constraints on player_stats /
+    team_stats / live_events are satisfied when uploading PDFs.
+    Uses INSERT ... ON CONFLICT DO NOTHING so real rows created by the
+    Excel/JSON flow are never overwritten.
+    """
+    db = _get_pdf_game_db()
+    stub: dict = {
+        "game_key": game_key,
+        "status": "final",
+        "league_id": league_id,
+        "competitionname": meta.get("competition", ""),
+        "hometeam": meta.get("home_team_full", ""),
+        "awayteam": meta.get("away_team_full", ""),
+    }
+    if meta.get("game_date"):
+        stub["matchtime"] = meta["game_date"]
+    try:
+        db.table("game_schedule").insert(stub, count="exact").execute()
+        print(f"✅  PDF: game_schedule stub created for {game_key}")
+    except Exception as e:
+        err = str(e)
+        if "23505" in err or "duplicate" in err.lower() or "unique" in err.lower():
+            pass  # Row already exists from Excel — leave it untouched
+        elif "PGRST204" in err:
+            col = _strip_unknown_col(err)
+            if col:
+                stub.pop(col, None)
+                try:
+                    db.table("game_schedule").insert(stub, count="exact").execute()
+                    print(f"✅  PDF: game_schedule stub created for {game_key} (stripped {col})")
+                    return
+                except Exception:
+                    pass
+        else:
+            print(f"⚠️  PDF: could not create game_schedule stub for {game_key}: {e}")
+
+
 def _short_hash(text: str, length: int = 8) -> str:
     return hashlib.md5(text.encode()).hexdigest()[:length]
 
@@ -719,6 +758,7 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
 
             player_records.append(p_rec)
 
+    _ensure_game_schedule_stub(game_key, meta, league_id)
     pc = _upsert("player_stats", player_records, "identifier_duplicate")
     tc = _upsert("team_stats", team_records, "identifier_duplicate")
 
@@ -994,6 +1034,7 @@ def _parse_pbp(pdf, meta: dict, league_id: str, home_team_id: str, away_team_id:
     if not events:
         return {"event_count": 0}
 
+    _ensure_game_schedule_stub(game_key, meta, league_id)
     count = _insert_batch("live_events", events)
     return {"event_count": count}
 
