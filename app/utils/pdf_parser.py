@@ -351,8 +351,16 @@ def _parse_header(first_page_text: str) -> dict:
     else:
         meta["officials"] = None
 
-    # Team abbreviations from section headers e.g. "Team Name (SOU)" or "Team Name (TM3)"
-    abbrs = re.findall(r"\(([A-Z][A-Z0-9]{1,4})\)", first_page_text)
+    # Team abbreviations from section headers e.g. "Team Name (SOU)", "(TM3)", or "1 (one)"
+    # Prefer matches followed by zero-width space (FIBA PDF section header marker).
+    # Fall back to any (ABBR) on its own line if none found that way.
+    abbrs = re.findall(r"\(([A-Za-z][A-Za-z0-9]{1,4})\)\u200b", first_page_text)
+    if len(abbrs) < 2:
+        abbrs = []
+        for _ln in first_page_text.splitlines():
+            _m = re.match(r"^(.+?)\s*\(([A-Za-z][A-Za-z0-9]{1,4})\)\s*$", _ln.strip())
+            if _m and not re.search(r"\d{2}:\d{2}|\d+/\d+", _m.group(1)):
+                abbrs.append(_m.group(2))
     meta["home_abbr"] = abbrs[0] if len(abbrs) > 0 else "HOME"
     meta["away_abbr"] = abbrs[1] if len(abbrs) > 1 else "AWAY"
 
@@ -390,7 +398,7 @@ _BS_TOTALS_RE = re.compile(
 _BS_TEAM_RE = re.compile(r"^Team/Coach\s+(.*)")
 
 _SECTION_HEADER_RE = re.compile(
-    r"^(.+?)\s*\(([A-Z][A-Z0-9]{1,4})\)\s*(?:\u200b.*)?$"
+    r"^(.+?)\s*\(([A-Za-z][A-Za-z0-9]{1,4})\)\s*(?:\u200b.*)?$"
 )
 
 
@@ -598,10 +606,6 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
 
     team_sections = []
     current_section = None
-
-    # Debug: print first 40 non-empty lines so we can see the actual PDF structure
-    _debug_lines = [l.strip() for l in lines if l.strip()][:40]
-    print(f"🔍 BOX SCORE first lines:\n" + "\n".join(f"  {repr(l)}" for l in _debug_lines))
 
     for line in lines:
         line_s = line.strip()
