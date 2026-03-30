@@ -351,8 +351,8 @@ def _parse_header(first_page_text: str) -> dict:
     else:
         meta["officials"] = None
 
-    # Team abbreviations from section headers e.g. "Team Name (SOU)"
-    abbrs = re.findall(r"\(([A-Z]{2,5})\)", first_page_text)
+    # Team abbreviations from section headers e.g. "Team Name (SOU)" or "Team Name (TM3)"
+    abbrs = re.findall(r"\(([A-Z][A-Z0-9]{1,4})\)", first_page_text)
     meta["home_abbr"] = abbrs[0] if len(abbrs) > 0 else "HOME"
     meta["away_abbr"] = abbrs[1] if len(abbrs) > 1 else "AWAY"
 
@@ -390,7 +390,7 @@ _BS_TOTALS_RE = re.compile(
 _BS_TEAM_RE = re.compile(r"^Team/Coach\s+(.*)")
 
 _SECTION_HEADER_RE = re.compile(
-    r"^(.+?)\s*\(([A-Z]{2,5})\)\s*(?:\u200b.*)?$"
+    r"^(.+?)\s*\(([A-Z][A-Z0-9]{1,4})\)\s*(?:\u200b.*)?$"
 )
 
 
@@ -609,7 +609,7 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
             continue
 
         # Section header detection: "SomeName (ABR)" pattern
-        sh_m = re.match(r"^(.+?)\s*\(([A-Z]{2,5})\)\s*(?:\u200b.*)?$", line_s)
+        sh_m = _SECTION_HEADER_RE.match(line_s)
         if sh_m:
             raw_name = sh_m.group(1).strip()
             abbr = sh_m.group(2)
