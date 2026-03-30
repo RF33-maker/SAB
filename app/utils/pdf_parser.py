@@ -599,6 +599,10 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
     team_sections = []
     current_section = None
 
+    # Debug: print first 40 non-empty lines so we can see the actual PDF structure
+    _debug_lines = [l.strip() for l in lines if l.strip()][:40]
+    print(f"🔍 BOX SCORE first lines:\n" + "\n".join(f"  {repr(l)}" for l in _debug_lines))
+
     for line in lines:
         line_s = line.strip()
         if not line_s:
