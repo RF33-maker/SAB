@@ -758,7 +758,7 @@ def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
                 "full_name": full_name,
                 "team_name": team_name,
                 "side": side,
-                "identifier_duplicate": f"{game_key}_{player_id}",
+                "identifier_duplicate": f"{game_key}_{team_id}_{player_id}",
             }
             for k, v in p.items():
                 if k not in ("full_name",):
