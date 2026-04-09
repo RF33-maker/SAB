@@ -916,14 +916,15 @@ def _parse_action_fields(text: str, action_type: str) -> dict:
     if action_type == "sub":
         fields["sub_type"] = "in" if "substitution in" in tl else "out" if "substitution out" in tl else None
 
-    # Qualifiers
+    # Qualifiers — stored as text[] in DB; return a Python list so PostgREST
+    # serialises it correctly as a PostgreSQL array.
     qs = [q for q in (
         "fast break", "from turnover", "second chance",
         "in the paint", "outside the paint",
         "jump shot", "layup", "dunk", "hook shot",
     ) if q in tl]
     if qs:
-        fields["qualifiers"] = ", ".join(qs)
+        fields["qualifiers"] = qs   # list, not a joined string
 
     return fields
 
