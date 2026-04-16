@@ -251,11 +251,13 @@ def _fetch_gs_row(game_key: str) -> dict | None:
                 continue  # score columns missing — retry with fewer cols
             return None  # unexpected DB error
 
+    import sys as _sys
+
     if row is None:
-        print(f"🔍 COLLISION: no game_schedule row found for {game_key}")
+        _sys.stderr.write(f"[COLLISION] no game_schedule row for {game_key}\n"); _sys.stderr.flush()
         return None  # game_key does not exist
 
-    print(f"🔍 COLLISION: game_schedule row = {row}")
+    _sys.stderr.write(f"[COLLISION] gs row = {row}\n"); _sys.stderr.flush()
 
     # --- 2. If scores not available from game_schedule, read from team_stats ---
     if row.get("home_score") is None and row.get("away_score") is None:
@@ -266,7 +268,7 @@ def _fetch_gs_row(game_key: str) -> dict | None:
                 .eq("game_key", game_key)
                 .execute()
             )
-            print(f"🔍 COLLISION: team_stats rows = {ts.data if ts else None}")
+            _sys.stderr.write(f"[COLLISION] team_stats = {ts.data if ts else None}\n"); _sys.stderr.flush()
             if ts and ts.data:
                 for tr in ts.data:
                     side_val = str(tr.get("side", ""))
@@ -276,9 +278,9 @@ def _fetch_gs_row(game_key: str) -> dict | None:
                     elif side_val == "2" and score_val is not None:
                         row["away_score"] = score_val
         except Exception as ex:
-            print(f"🔍 COLLISION: team_stats query failed: {ex}")
+            _sys.stderr.write(f"[COLLISION] team_stats query FAILED: {ex}\n"); _sys.stderr.flush()
 
-    print(f"🔍 COLLISION: resolved row = {row}")
+    _sys.stderr.write(f"[COLLISION] final row = {row}\n"); _sys.stderr.flush()
     return row
 
 
@@ -310,13 +312,14 @@ def _is_same_game(existing_row: dict, meta: dict) -> bool:
     n_hs = meta.get("home_score")
     n_as = meta.get("away_score")
 
+    import sys as _sys
     if all(x is not None for x in (e_hs, e_as, n_hs, n_as)):
         if int(e_hs) != int(n_hs) or int(e_as) != int(n_as):
-            print(f"🔍 COLLISION: score mismatch existing={e_hs}-{e_as} new={n_hs}-{n_as} → DIFFERENT GAME")
-            return False  # same teams, different score → different game
-        print(f"🔍 COLLISION: scores match {e_hs}-{e_as} → SAME GAME")
+            _sys.stderr.write(f"[COLLISION] score mismatch existing={e_hs}-{e_as} new={n_hs}-{n_as} DIFFERENT\n"); _sys.stderr.flush()
+            return False
+        _sys.stderr.write(f"[COLLISION] scores match {e_hs}-{e_as} SAME\n"); _sys.stderr.flush()
     else:
-        print(f"🔍 COLLISION: scores incomplete e=({e_hs},{e_as}) n=({n_hs},{n_as}) → assuming SAME GAME")
+        _sys.stderr.write(f"[COLLISION] scores incomplete e=({e_hs},{e_as}) n=({n_hs},{n_as}) assuming SAME\n"); _sys.stderr.flush()
 
     return True  # same game or not enough info to tell
 
@@ -1781,6 +1784,8 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
             # game number.  Append the game date (or a letter suffix) so this
             # upload creates a new game rather than overwriting the old one.
             # Skip this check when the caller supplied an explicit game_key.
+            import sys as _sys
+            _sys.stderr.write(f"[COLLISION] checking key={game_key} provided={provided_game_key} home_score={meta.get('home_score')} away_score={meta.get('away_score')}\n"); _sys.stderr.flush()
             if not provided_game_key:
                 resolved = _resolve_game_key_collision(game_key, meta)
                 if resolved != game_key:
