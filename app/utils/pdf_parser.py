@@ -234,6 +234,7 @@ def _fetch_gs_row(game_key: str) -> dict | None:
     db = _get_pdf_game_db()
 
     # --- 1. Try game_schedule with score columns ---
+    import sys as _sys
     row: dict | None = None
     for cols in ("hometeam,home_score,away_score", "hometeam"):
         try:
@@ -247,11 +248,10 @@ def _fetch_gs_row(game_key: str) -> dict | None:
             row = r.data if r else None
             break
         except Exception as e:
+            _sys.stderr.write(f"[COLLISION] game_schedule query error (cols={cols}): {e}\n"); _sys.stderr.flush()
             if "PGRST204" in str(e) or "column" in str(e).lower():
                 continue  # score columns missing — retry with fewer cols
             return None  # unexpected DB error
-
-    import sys as _sys
 
     if row is None:
         _sys.stderr.write(f"[COLLISION] no game_schedule row for {game_key}\n"); _sys.stderr.flush()
@@ -461,7 +461,7 @@ def _parse_header(first_page_text: str) -> dict:
     # Game No.
     m = re.search(r"Game No\.\s*:\s*(\d+)", first_page_text)
     meta["game_no"] = m.group(1) if m else None
-    meta["game_key"] = f"PDF_{meta['game_no']}" if meta["game_no"] else None
+    # game_key is finalised below, after the score is parsed
 
     # Game Duration
     m = re.search(r"Game Duration\s*:\s*([\d:]+)", first_page_text)
@@ -478,6 +478,20 @@ def _parse_header(first_page_text: str) -> dict:
             meta["home_score"] = _safe_int(m.group(2))
             meta["away_score"] = _safe_int(m.group(3))
             break
+
+    # Build game_key.  Include the final score so two games that share a Game
+    # No. (organiser error) always get distinct keys without any DB lookup.
+    #   Same game re-uploaded  → same score → same key → normal upsert  ✓
+    #   Different game, same no. → different score → different key       ✓
+    if meta.get("game_no"):
+        hs = meta.get("home_score")
+        as_ = meta.get("away_score")
+        if hs is not None and as_ is not None:
+            meta["game_key"] = f"PDF_{meta['game_no']}_{hs}_{as_}"
+        else:
+            meta["game_key"] = f"PDF_{meta['game_no']}"
+    else:
+        meta["game_key"] = None
 
     # Away team: first non-empty line after the score line that contains no score/digits
     # (skip "Report Generated:" line which appears between them)
@@ -1779,24 +1793,9 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
 
             game_key = meta["game_key"]
 
-            # Collision guard: if the PDF-derived game_key already exists in
-            # game_schedule with a DIFFERENT home team, the organiser reused a
-            # game number.  Append the game date (or a letter suffix) so this
-            # upload creates a new game rather than overwriting the old one.
-            # Skip this check when the caller supplied an explicit game_key.
-            import sys as _sys
-            _sys.stderr.write(f"[COLLISION] checking key={game_key} provided={provided_game_key} home_score={meta.get('home_score')} away_score={meta.get('away_score')}\n"); _sys.stderr.flush()
-            if not provided_game_key:
-                resolved = _resolve_game_key_collision(game_key, meta)
-                if resolved != game_key:
-                    log.warning(
-                        "PDF game_key collision: '%s' already exists with different teams. "
-                        "Using '%s' instead.",
-                        game_key,
-                        resolved,
-                    )
-                    game_key = resolved
-                    meta["game_key"] = resolved
+            # game_key already encodes the final score (PDF_{game_no}_{home}_{away}),
+            # so two games sharing the same Game No. but ending differently will
+            # naturally get different keys — no DB lookup required.
 
             # If no league_name provided (or generic fallback), derive from PDF header.
             # meta["competition"] is e.g. "WEABL 2025-26" — use it directly.
@@ -1836,19 +1835,12 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
             elif report_type == "rotations":
                 counts = _parse_rotations(pdf, meta, league_id)
 
-            original_game_key = f"PDF_{meta.get('game_no')}" if meta.get("game_no") else None
-            collision_resolved = (
-                original_game_key is not None
-                and game_key != original_game_key
-                and not provided_game_key
-            )
-
             return {
                 "skipped": False,
                 "message": f"Parsed {report_type} for game {game_key}",
                 "report_type": report_type,
                 "game_key": game_key,
-                "game_key_collision_resolved": collision_resolved,
+                "game_no": meta.get("game_no"),
                 "game_date": meta.get("game_date"),
                 "competition": meta.get("competition"),
                 "venue": meta.get("venue"),
