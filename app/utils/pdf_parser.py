@@ -197,6 +197,85 @@ def _short_hash(text: str, length: int = 8) -> str:
     return hashlib.md5(text.encode()).hexdigest()[:length]
 
 
+def _compact_date_str(date_str: str) -> str:
+    """
+    Convert a human-readable date string to YYYYMMDD (e.g. '29 March 2026' → '20260329').
+    Returns '' if parsing fails.
+    """
+    import datetime
+    if not date_str:
+        return ""
+    for fmt in ("%d %B %Y", "%d %b %Y", "%Y-%m-%d", "%d/%m/%Y", "%B %d %Y", "%b %d %Y"):
+        try:
+            return datetime.datetime.strptime(date_str.strip(), fmt).strftime("%Y%m%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def _resolve_game_key_collision(candidate: str, meta: dict) -> str:
+    """
+    Check whether `candidate` game_key already exists in game_schedule with a
+    DIFFERENT home team.  If so, return a new key with the game date appended
+    (e.g. PDF_7 → PDF_7_20260329).  Falls back to PDF_7_b / _c / _d if the
+    date isn't available or itself collides.
+
+    Only called when the game_key was derived from the PDF (not user-supplied),
+    so a mismatch means the organiser reused a game number.
+    """
+    db = _get_pdf_game_db()
+    try:
+        row = (
+            db.table("game_schedule")
+            .select("hometeam")
+            .eq("game_key", candidate)
+            .maybe_single()
+            .execute()
+        )
+    except Exception:
+        return candidate  # can't query — keep original
+
+    if not row or not row.data:
+        return candidate  # no existing row — no collision
+
+    existing_home = (row.data.get("hometeam") or "").lower().strip()
+    new_home = (
+        meta.get("home_team_full") or meta.get("home_abbr") or ""
+    ).lower().strip()
+
+    if not existing_home or not new_home:
+        return candidate  # can't compare — keep original
+
+    # Consider it the same game if the first six characters of the home team overlap
+    if existing_home[:6] in new_home or new_home[:6] in existing_home:
+        return candidate  # same game — no collision
+
+    # Different game — build a unique key using the date first
+    date_compact = _compact_date_str(meta.get("game_date") or "")
+    if date_compact:
+        new_candidate = f"{candidate}_{date_compact}"
+        # Recurse once to check whether the date-suffixed key also collides
+        return _resolve_game_key_collision(new_candidate, meta)
+
+    # No date available — fall back to sequential letter suffix
+    for suffix in ("b", "c", "d", "e", "f"):
+        new_candidate = f"{candidate}_{suffix}"
+        try:
+            r = (
+                db.table("game_schedule")
+                .select("game_key")
+                .eq("game_key", new_candidate)
+                .maybe_single()
+                .execute()
+            )
+            if not r or not r.data:
+                return new_candidate
+        except Exception:
+            return new_candidate
+
+    return candidate  # give up — caller keeps original
+
+
 def _parse_ma(val: str):
     """Parse 'M/A' format. Returns (made, attempted) or (None, None)."""
     if not val or "/" not in str(val):
@@ -1604,6 +1683,23 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
 
             game_key = meta["game_key"]
 
+            # Collision guard: if the PDF-derived game_key already exists in
+            # game_schedule with a DIFFERENT home team, the organiser reused a
+            # game number.  Append the game date (or a letter suffix) so this
+            # upload creates a new game rather than overwriting the old one.
+            # Skip this check when the caller supplied an explicit game_key.
+            if not provided_game_key:
+                resolved = _resolve_game_key_collision(game_key, meta)
+                if resolved != game_key:
+                    log.warning(
+                        "PDF game_key collision: '%s' already exists with different teams. "
+                        "Using '%s' instead.",
+                        game_key,
+                        resolved,
+                    )
+                    game_key = resolved
+                    meta["game_key"] = resolved
+
             # If no league_name provided (or generic fallback), derive from PDF header.
             # meta["competition"] is e.g. "WEABL 2025-26" — use it directly.
             if not league_name or league_name.lower() in ("unknown", ""):
@@ -1642,11 +1738,19 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
             elif report_type == "rotations":
                 counts = _parse_rotations(pdf, meta, league_id)
 
+            original_game_key = f"PDF_{meta.get('game_no')}" if meta.get("game_no") else None
+            collision_resolved = (
+                original_game_key is not None
+                and game_key != original_game_key
+                and not provided_game_key
+            )
+
             return {
                 "skipped": False,
                 "message": f"Parsed {report_type} for game {game_key}",
                 "report_type": report_type,
                 "game_key": game_key,
+                "game_key_collision_resolved": collision_resolved,
                 "game_date": meta.get("game_date"),
                 "competition": meta.get("competition"),
                 "venue": meta.get("venue"),
