@@ -94,6 +94,13 @@ ALTER TABLE public.game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
 ALTER TABLE test.game_schedule ADD COLUMN IF NOT EXISTS attendance integer;
 ALTER TABLE test.game_schedule ADD COLUMN IF NOT EXISTS officials jsonb;
 
+-- Final score columns — used by collision detection to distinguish games that
+-- share the same Game No. but produced different results (organiser error).
+ALTER TABLE public.game_schedule ADD COLUMN IF NOT EXISTS home_score integer;
+ALTER TABLE public.game_schedule ADD COLUMN IF NOT EXISTS away_score integer;
+ALTER TABLE test.game_schedule ADD COLUMN IF NOT EXISTS home_score integer;
+ALTER TABLE test.game_schedule ADD COLUMN IF NOT EXISTS away_score integer;
+
 -- ========================================
 -- LINEUP STATS (PDF: Line Up Analysis)
 -- Created in BOTH public and test schemas so the PDF parser (test schema)

@@ -160,6 +160,9 @@ def _ensure_game_schedule_stub(game_key: str, meta: dict, league_id: str) -> Non
     team_stats / live_events are satisfied when uploading PDFs.
     Uses INSERT ... ON CONFLICT DO NOTHING so real rows created by the
     Excel/JSON flow are never overwritten.
+
+    home_score / away_score are stored so that collision detection can
+    distinguish two games that share the same Game No. but ended differently.
     """
     db = _get_pdf_game_db()
     stub: dict = {
@@ -169,28 +172,31 @@ def _ensure_game_schedule_stub(game_key: str, meta: dict, league_id: str) -> Non
         "competitionname": meta.get("competition", ""),
         "hometeam": meta.get("home_team_full", ""),
         "awayteam": meta.get("away_team_full", ""),
+        "home_score": meta.get("home_score"),
+        "away_score": meta.get("away_score"),
     }
     if meta.get("game_date"):
         stub["matchtime"] = meta["game_date"]
-    try:
-        db.table("game_schedule").insert(stub, count="exact").execute()
-        print(f"✅  PDF: game_schedule stub created for {game_key}")
-    except Exception as e:
-        err = str(e)
-        if "23505" in err or "duplicate" in err.lower() or "unique" in err.lower():
-            pass  # Row already exists from Excel — leave it untouched
-        elif "PGRST204" in err:
-            col = _strip_unknown_col(err)
-            if col:
-                stub.pop(col, None)
-                try:
-                    db.table("game_schedule").insert(stub, count="exact").execute()
-                    print(f"✅  PDF: game_schedule stub created for {game_key} (stripped {col})")
-                    return
-                except Exception:
-                    pass
-        else:
+
+    # Retry loop: strip any columns unknown to this DB instance (PGRST204)
+    # until the insert succeeds or a non-schema error occurs.
+    for _attempt in range(8):
+        try:
+            db.table("game_schedule").insert(stub, count="exact").execute()
+            print(f"✅  PDF: game_schedule stub created for {game_key}")
+            return
+        except Exception as e:
+            err = str(e)
+            if "23505" in err or "duplicate" in err.lower() or "unique" in err.lower():
+                return  # Row already exists — leave it untouched
+            elif "PGRST204" in err:
+                col = _strip_unknown_col(err)
+                if col and col in stub:
+                    stub.pop(col)
+                    continue  # retry with the offending column removed
+            # Non-schema error or couldn't identify column — give up
             print(f"⚠️  PDF: could not create game_schedule stub for {game_key}: {e}")
+            return
 
 
 def _short_hash(text: str, length: int = 8) -> str:
@@ -213,67 +219,112 @@ def _compact_date_str(date_str: str) -> str:
     return ""
 
 
-def _resolve_game_key_collision(candidate: str, meta: dict) -> str:
+def _fetch_gs_row(game_key: str) -> dict | None:
     """
-    Check whether `candidate` game_key already exists in game_schedule with a
-    DIFFERENT home team.  If so, return a new key with the game date appended
-    (e.g. PDF_7 → PDF_7_20260329).  Falls back to PDF_7_b / _c / _d if the
-    date isn't available or itself collides.
-
-    Only called when the game_key was derived from the PDF (not user-supplied),
-    so a mismatch means the organiser reused a game number.
+    Fetch a game_schedule row by game_key.
+    Tries with score columns first; falls back to team-name-only if the
+    columns don't exist yet (pre-migration DBs).
+    Returns the row dict, or None if the row doesn't exist.
     """
     db = _get_pdf_game_db()
-    try:
-        row = (
-            db.table("game_schedule")
-            .select("hometeam")
-            .eq("game_key", candidate)
-            .maybe_single()
-            .execute()
-        )
-    except Exception:
-        return candidate  # can't query — keep original
+    for cols in ("hometeam,home_score,away_score", "hometeam"):
+        try:
+            r = (
+                db.table("game_schedule")
+                .select(cols)
+                .eq("game_key", game_key)
+                .maybe_single()
+                .execute()
+            )
+            return r.data if r else None
+        except Exception as e:
+            if "PGRST204" in str(e) or "column" in str(e).lower():
+                continue  # score columns missing — retry without them
+            return None  # unexpected error
+    return None
 
-    if not row or not row.data:
-        return candidate  # no existing row — no collision
 
-    existing_home = (row.data.get("hometeam") or "").lower().strip()
+def _is_same_game(existing_row: dict, meta: dict) -> bool:
+    """
+    Return True when `existing_row` (from game_schedule) looks like the same
+    physical game as the PDF described by `meta`.
+
+    Checks (in order):
+      1. Home team name — if it differs clearly → different game.
+      2. Final score  — if both sides have score data and the scores differ
+                        → different game (even when teams are the same, e.g.
+                        organiser reused a Game No. for a rematch).
+    Returns True (same game) when we cannot determine otherwise.
+    """
+    existing_home = (existing_row.get("hometeam") or "").lower().strip()
     new_home = (
         meta.get("home_team_full") or meta.get("home_abbr") or ""
     ).lower().strip()
 
-    if not existing_home or not new_home:
-        return candidate  # can't compare — keep original
+    # --- Team check ---
+    if existing_home and new_home:
+        if existing_home[:6] not in new_home and new_home[:6] not in existing_home:
+            return False  # clearly different teams → different game
 
-    # Consider it the same game if the first six characters of the home team overlap
-    if existing_home[:6] in new_home or new_home[:6] in existing_home:
-        return candidate  # same game — no collision
+    # --- Score check (only when score columns are present in the row) ---
+    e_hs = existing_row.get("home_score")
+    e_as = existing_row.get("away_score")
+    n_hs = meta.get("home_score")
+    n_as = meta.get("away_score")
 
-    # Different game — build a unique key using the date first
+    if all(x is not None for x in (e_hs, e_as, n_hs, n_as)):
+        if int(e_hs) != int(n_hs) or int(e_as) != int(n_as):
+            return False  # same teams, different score → different game
+
+    return True  # same game or not enough info to tell
+
+
+def _find_free_key(base: str, meta: dict) -> str:
+    """
+    Given a base key that is already taken by a DIFFERENT game, return the
+    first available (free) key by trying:
+      1. {base}_{YYYYMMDD}  — using the game date from meta
+      2. {base}_b, _c, _d, _e, _f  — sequential letter suffixes
+
+    A key is "free" if no game_schedule row exists for it, OR if the row that
+    exists is already for THIS same game (safe to upsert).
+    """
     date_compact = _compact_date_str(meta.get("game_date") or "")
+    candidates: list[str] = []
     if date_compact:
-        new_candidate = f"{candidate}_{date_compact}"
-        # Recurse once to check whether the date-suffixed key also collides
-        return _resolve_game_key_collision(new_candidate, meta)
+        candidates.append(f"{base}_{date_compact}")
+    candidates += [f"{base}_{s}" for s in ("b", "c", "d", "e", "f")]
 
-    # No date available — fall back to sequential letter suffix
-    for suffix in ("b", "c", "d", "e", "f"):
-        new_candidate = f"{candidate}_{suffix}"
-        try:
-            r = (
-                db.table("game_schedule")
-                .select("game_key")
-                .eq("game_key", new_candidate)
-                .maybe_single()
-                .execute()
-            )
-            if not r or not r.data:
-                return new_candidate
-        except Exception:
-            return new_candidate
+    for key in candidates:
+        row = _fetch_gs_row(key)
+        if row is None:
+            return key  # slot is free
+        if _is_same_game(row, meta):
+            return key  # same game already sitting here — safe to upsert
 
-    return candidate  # give up — caller keeps original
+    return base  # exhausted options — fall back to original (shouldn't happen)
+
+
+def _resolve_game_key_collision(candidate: str, meta: dict) -> str:
+    """
+    Entry point for collision resolution.
+
+    If `candidate` game_key already exists in game_schedule for a DIFFERENT
+    game (detected via team name or final score), return a new unique key.
+    Otherwise return `candidate` unchanged (same game → normal upsert).
+
+    Only called when the game_key was derived from the PDF (not user-supplied).
+    """
+    row = _fetch_gs_row(candidate)
+
+    if row is None:
+        return candidate  # no existing row — no collision
+
+    if _is_same_game(row, meta):
+        return candidate  # same game — upsert normally
+
+    # Different game occupying this key — find a free slot
+    return _find_free_key(candidate, meta)
 
 
 def _parse_ma(val: str):
