@@ -252,26 +252,33 @@ def _fetch_gs_row(game_key: str) -> dict | None:
             return None  # unexpected DB error
 
     if row is None:
+        print(f"🔍 COLLISION: no game_schedule row found for {game_key}")
         return None  # game_key does not exist
+
+    print(f"🔍 COLLISION: game_schedule row = {row}")
 
     # --- 2. If scores not available from game_schedule, read from team_stats ---
     if row.get("home_score") is None and row.get("away_score") is None:
         try:
             ts = (
                 db.table("team_stats")
-                .select("side,score")
+                .select("side,score,tot_spoints")
                 .eq("game_key", game_key)
                 .execute()
             )
+            print(f"🔍 COLLISION: team_stats rows = {ts.data if ts else None}")
             if ts and ts.data:
                 for tr in ts.data:
-                    if str(tr.get("side")) == "1" and tr.get("score") is not None:
-                        row["home_score"] = tr["score"]
-                    elif str(tr.get("side")) == "2" and tr.get("score") is not None:
-                        row["away_score"] = tr["score"]
-        except Exception:
-            pass  # scores stay None — team-name check is the fallback
+                    side_val = str(tr.get("side", ""))
+                    score_val = tr.get("score") if tr.get("score") is not None else tr.get("tot_spoints")
+                    if side_val == "1" and score_val is not None:
+                        row["home_score"] = score_val
+                    elif side_val == "2" and score_val is not None:
+                        row["away_score"] = score_val
+        except Exception as ex:
+            print(f"🔍 COLLISION: team_stats query failed: {ex}")
 
+    print(f"🔍 COLLISION: resolved row = {row}")
     return row
 
 
@@ -305,7 +312,11 @@ def _is_same_game(existing_row: dict, meta: dict) -> bool:
 
     if all(x is not None for x in (e_hs, e_as, n_hs, n_as)):
         if int(e_hs) != int(n_hs) or int(e_as) != int(n_as):
+            print(f"🔍 COLLISION: score mismatch existing={e_hs}-{e_as} new={n_hs}-{n_as} → DIFFERENT GAME")
             return False  # same teams, different score → different game
+        print(f"🔍 COLLISION: scores match {e_hs}-{e_as} → SAME GAME")
+    else:
+        print(f"🔍 COLLISION: scores incomplete e=({e_hs},{e_as}) n=({n_hs},{n_as}) → assuming SAME GAME")
 
     return True  # same game or not enough info to tell
 
