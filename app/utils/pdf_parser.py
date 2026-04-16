@@ -221,12 +221,20 @@ def _compact_date_str(date_str: str) -> str:
 
 def _fetch_gs_row(game_key: str) -> dict | None:
     """
-    Fetch a game_schedule row by game_key.
-    Tries with score columns first; falls back to team-name-only if the
-    columns don't exist yet (pre-migration DBs).
-    Returns the row dict, or None if the row doesn't exist.
+    Fetch a game_schedule row by game_key, enriched with the final scores.
+
+    Score resolution order:
+      1. game_schedule.home_score / away_score  (present after migration)
+      2. team_stats.score grouped by side=1/2   (always present after box score upload)
+      3. Neither — scores stay None (team-name-only check will be used)
+
+    Returns the row dict (always has 'hometeam'; may have 'home_score'/'away_score'),
+    or None if the game_key doesn't exist at all.
     """
     db = _get_pdf_game_db()
+
+    # --- 1. Try game_schedule with score columns ---
+    row: dict | None = None
     for cols in ("hometeam,home_score,away_score", "hometeam"):
         try:
             r = (
@@ -236,12 +244,35 @@ def _fetch_gs_row(game_key: str) -> dict | None:
                 .maybe_single()
                 .execute()
             )
-            return r.data if r else None
+            row = r.data if r else None
+            break
         except Exception as e:
             if "PGRST204" in str(e) or "column" in str(e).lower():
-                continue  # score columns missing — retry without them
-            return None  # unexpected error
-    return None
+                continue  # score columns missing — retry with fewer cols
+            return None  # unexpected DB error
+
+    if row is None:
+        return None  # game_key does not exist
+
+    # --- 2. If scores not available from game_schedule, read from team_stats ---
+    if row.get("home_score") is None and row.get("away_score") is None:
+        try:
+            ts = (
+                db.table("team_stats")
+                .select("side,score")
+                .eq("game_key", game_key)
+                .execute()
+            )
+            if ts and ts.data:
+                for tr in ts.data:
+                    if str(tr.get("side")) == "1" and tr.get("score") is not None:
+                        row["home_score"] = tr["score"]
+                    elif str(tr.get("side")) == "2" and tr.get("score") is not None:
+                        row["away_score"] = tr["score"]
+        except Exception:
+            pass  # scores stay None — team-name check is the fallback
+
+    return row
 
 
 def _is_same_game(existing_row: dict, meta: dict) -> bool:
