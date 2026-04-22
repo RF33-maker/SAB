@@ -351,7 +351,14 @@ class _TeamLineup:
                             player.get("player_name"), player.get("shirt_number"),
                         )
             elif direction == "in":
-                self.active[pkey] = player
+                # Guard against adding a true duplicate (same player_id or shirt number).
+                # Only de-dup on definitive identifiers — fuzzy name matching is too
+                # risky here and causes under-counting when different players share surnames.
+                already = _find_definitive_match(self.active, player)
+                if already:
+                    self.active[already] = player
+                else:
+                    self.active[pkey] = player
 
         self._pending_subs = []
 
@@ -429,17 +436,75 @@ def _player_key(player: dict) -> str:
     return f"{name}:{shirt}"
 
 
+def _name_tokens(name: str):
+    """Return (last_name, first_initial) from a player name string."""
+    parts = name.strip().lower().split()
+    if not parts:
+        return "", ""
+    last = parts[-1]
+    first_initial = parts[0][0] if parts[0] else ""
+    return last, first_initial
+
+
+def _names_match(a: str, b: str) -> bool:
+    """
+    Return True if two player name strings refer to the same person.
+    Handles:
+      - exact match
+      - abbreviated first name: "V. Iweanya" vs "Vural Iweanya"
+      - same last name + same first initial
+    """
+    a = (a or "").strip().lower()
+    b = (b or "").strip().lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    a_last, a_init = _name_tokens(a)
+    b_last, b_init = _name_tokens(b)
+    if a_last != b_last:
+        return False
+    # last names match — accept if either first part starts with the other's initial
+    return (not a_init or not b_init or a_init == b_init)
+
+
 def _find_player_in_active(active: dict, player: dict) -> Optional[str]:
-    """Try to find a player in the active dict by name or shirt number."""
+    """
+    Try to find a player in the active dict by shirt number, player_id, or name.
+    Uses fuzzy name matching to handle abbreviated vs full names.
+    """
     name = (player.get("player_name") or "").strip().lower()
     shirt = (player.get("shirt_number") or "").strip()
+    pid = player.get("player_id")
 
     for key, p in active.items():
         p_name = (p.get("player_name") or "").strip().lower()
         p_shirt = (p.get("shirt_number") or "").strip()
-        if shirt and p_shirt == shirt:
+        p_pid = p.get("player_id")
+        if pid and p_pid and str(pid) == str(p_pid):
             return key
-        if name and p_name == name:
+        if shirt and p_shirt and p_shirt == shirt:
+            return key
+        if name and _names_match(name, p_name):
+            return key
+    return None
+
+
+def _find_definitive_match(active: dict, player: dict) -> Optional[str]:
+    """
+    Return the active-dict key for player only if there is a definitive match:
+    same player_id UUID or same shirt number. Does NOT use name matching to
+    avoid false positives when different players share a surname.
+    """
+    pid = player.get("player_id")
+    shirt = (player.get("shirt_number") or "").strip()
+
+    for key, p in active.items():
+        p_pid = p.get("player_id")
+        p_shirt = (p.get("shirt_number") or "").strip()
+        if pid and p_pid and str(pid) == str(p_pid):
+            return key
+        if shirt and p_shirt and p_shirt == shirt:
             return key
     return None
 
@@ -447,20 +512,42 @@ def _find_player_in_active(active: dict, player: dict) -> Optional[str]:
 def _resolve_player_from_event(event: dict, roster: list) -> dict:
     """
     Build a player dict from a live_events row, optionally enriching from roster.
+    Falls back to name-based roster lookup when shirt_number is absent (historical data).
     """
     player = {
         "player_id": event.get("player_id"),
         "player_name": event.get("player_name"),
         "shirt_number": event.get("shirt_number") or event.get("pno"),
     }
+    if not roster:
+        return player
+
     shirt = str(event.get("shirt_number") or "").strip()
-    if not player["player_id"] and shirt and roster:
+    evt_name = (event.get("player_name") or "").strip()
+
+    # Try shirt-number match first (most reliable)
+    if shirt:
         for r in roster:
             if str(r.get("shirt_number") or "").strip() == shirt:
-                player["player_id"] = r.get("player_id")
+                if not player["player_id"]:
+                    player["player_id"] = r.get("player_id")
+                if not player["shirt_number"]:
+                    player["shirt_number"] = r.get("shirt_number")
                 if not player["player_name"]:
                     player["player_name"] = r.get("player_name")
+                return player
+
+    # Fall back to name match (handles historical events where shirt_number is NULL)
+    if evt_name:
+        for r in roster:
+            r_name = (r.get("player_name") or "").strip()
+            if _names_match(evt_name, r_name):
+                if not player["player_id"]:
+                    player["player_id"] = r.get("player_id")
+                if not player["shirt_number"]:
+                    player["shirt_number"] = r.get("shirt_number")
                 break
+
     return player
 
 
