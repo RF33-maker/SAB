@@ -369,3 +369,136 @@ SELECT
 FROM public.game_schedule
 WHERE matchtime <= NOW()
 ORDER BY matchtime DESC;
+
+
+-- ============================================================
+-- 10. lineup_summary
+--     Aggregates lineup_stints by lineup_key (across all games
+--     for a given team). Provides minutes, points, plus/minus,
+--     and rating stubs (NULL when possessions = 0, ready for
+--     future population once possession calculation is added).
+-- ============================================================
+CREATE OR REPLACE VIEW public.lineup_summary AS
+SELECT
+    ls.lineup_key,
+    ls.team_id,
+    ls.league_id,
+    t.name                                          AS team_name,
+    COUNT(*)                                        AS stints,
+    ROUND(SUM(ls.seconds_played)::numeric / 60, 2) AS minutes,
+    SUM(ls.points_for)                              AS points_for,
+    SUM(ls.points_against)                          AS points_against,
+    SUM(ls.points_for) - SUM(ls.points_against)    AS plus_minus,
+    SUM(ls.fg2_made)                                AS fg2_made,
+    SUM(ls.fg2_attempted)                           AS fg2_attempted,
+    SUM(ls.fg3_made)                                AS fg3_made,
+    SUM(ls.fg3_attempted)                           AS fg3_attempted,
+    SUM(ls.ft_made)                                 AS ft_made,
+    SUM(ls.ft_attempted)                            AS ft_attempted,
+    SUM(ls.oreb)                                    AS oreb,
+    SUM(ls.dreb)                                    AS dreb,
+    SUM(ls.assists)                                 AS assists,
+    SUM(ls.turnovers)                               AS turnovers,
+    SUM(ls.fouls)                                   AS fouls,
+    SUM(ls.steals)                                  AS steals,
+    SUM(ls.blocks)                                  AS blocks,
+    SUM(ls.possessions_for)                         AS possessions_for,
+    SUM(ls.possessions_against)                     AS possessions_against,
+    -- Offensive rating = points_for / possessions_for * 100
+    -- NULL when possessions = 0 (stub; populate once possession calc is added)
+    CASE WHEN SUM(ls.possessions_for) > 0
+        THEN ROUND(
+            (SUM(ls.points_for)::numeric / SUM(ls.possessions_for)) * 100, 1
+        )
+        ELSE NULL
+    END                                             AS off_rating,
+    -- Defensive rating = points_against / possessions_against * 100
+    CASE WHEN SUM(ls.possessions_against) > 0
+        THEN ROUND(
+            (SUM(ls.points_against)::numeric / SUM(ls.possessions_against)) * 100, 1
+        )
+        ELSE NULL
+    END                                             AS def_rating,
+    -- Net rating = off_rating - def_rating
+    CASE WHEN SUM(ls.possessions_for) > 0 AND SUM(ls.possessions_against) > 0
+        THEN ROUND(
+            (SUM(ls.points_for)::numeric / SUM(ls.possessions_for)) * 100
+            - (SUM(ls.points_against)::numeric / SUM(ls.possessions_against)) * 100,
+            1
+        )
+        ELSE NULL
+    END                                             AS net_rating,
+    -- Convenience: list of player names (first stint's lineup_names array)
+    MIN(ls.lineup_names::text)                      AS sample_lineup_names
+FROM public.lineup_stints ls
+LEFT JOIN public.teams t ON t.team_id = ls.team_id
+GROUP BY ls.lineup_key, ls.team_id, ls.league_id, t.name;
+
+
+-- ============================================================
+-- 11. player_on_off_summary
+--     Aggregates player_on_court_stints by player to give
+--     on-court minutes and scoring totals.
+--
+--     OFF-COURT component (future addition):
+--     -------------------------------------------------
+--     To add off-court stats, add a second CTE, e.g.:
+--
+--       off_court AS (
+--         SELECT
+--           gs.game_key,
+--           gs.team_id,
+--           -- For each game, compute team totals minus player on totals
+--           ...
+--         FROM public.game_schedule gs
+--         JOIN public.team_stats ts ON ts.game_key = gs.game_key
+--         LEFT JOIN on_court oc ON oc.player_id = ... AND oc.game_key = gs.game_key
+--       )
+--
+--     The off-court query requires reliable team-level possession/point
+--     totals for each game, which can be sourced from team_stats once
+--     game-level totals are confirmed accurate.
+-- ============================================================
+CREATE OR REPLACE VIEW public.player_on_off_summary AS
+SELECT
+    poc.player_id,
+    poc.player_name,
+    poc.team_id,
+    poc.league_id,
+    t.name                                          AS team_name,
+    COUNT(DISTINCT poc.game_key)                    AS games_played,
+    COUNT(*)                                        AS stints_on,
+    ROUND(SUM(poc.seconds_played)::numeric / 60, 2) AS minutes_on,
+    SUM(poc.points_for)                             AS points_for_on,
+    SUM(poc.points_against)                         AS points_against_on,
+    SUM(poc.points_for) - SUM(poc.points_against)  AS plus_minus_on,
+    SUM(poc.possessions_for)                        AS possessions_for_on,
+    SUM(poc.possessions_against)                    AS possessions_against_on,
+    -- On-court offensive rating stub
+    CASE WHEN SUM(poc.possessions_for) > 0
+        THEN ROUND(
+            (SUM(poc.points_for)::numeric / SUM(poc.possessions_for)) * 100, 1
+        )
+        ELSE NULL
+    END                                             AS on_off_rating,
+    -- On-court defensive rating stub
+    CASE WHEN SUM(poc.possessions_against) > 0
+        THEN ROUND(
+            (SUM(poc.points_against)::numeric / SUM(poc.possessions_against)) * 100, 1
+        )
+        ELSE NULL
+    END                                             AS on_def_rating,
+    -- Net on-court rating stub
+    CASE WHEN SUM(poc.possessions_for) > 0 AND SUM(poc.possessions_against) > 0
+        THEN ROUND(
+            (SUM(poc.points_for)::numeric / SUM(poc.possessions_for)) * 100
+            - (SUM(poc.points_against)::numeric / SUM(poc.possessions_against)) * 100,
+            1
+        )
+        ELSE NULL
+    END                                             AS on_net_rating
+FROM public.player_on_court_stints poc
+LEFT JOIN public.teams t ON t.team_id = poc.team_id
+WHERE poc.player_id IS NOT NULL
+GROUP BY poc.player_id, poc.player_name, poc.team_id, poc.league_id, t.name
+ORDER BY minutes_on DESC NULLS LAST;

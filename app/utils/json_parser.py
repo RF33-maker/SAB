@@ -512,6 +512,44 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     except Exception as e:
         log.error("Failed to process player stats for game %s: %s", numeric_id, e, exc_info=True)
 
+    # --- Build and upsert game_rosters ---
+    try:
+        roster_records = []
+        for side, team in teams.items():
+            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            for pid, player in team.get("pl", {}).items():
+                full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
+                shirt = player.get("shirtNumber")
+
+                # Resolve player_id from already-built roster_map or try lookup
+                try:
+                    _pno_int = int(pid)
+                except (ValueError, TypeError):
+                    _pno_int = None
+                resolved_pid = roster_map.get((side, _pno_int))
+
+                roster_records.append({
+                    "game_key": game_key,
+                    "league_id": league_id,
+                    "team_id": team_id,
+                    "team_no": side,
+                    "player_name": full_name,
+                    "shirt_number": str(shirt) if shirt is not None else None,
+                    "pno": _pno_int,
+                    "starter": bool(player.get("starter")),
+                    "active": bool(player.get("active", True)),
+                    "player_id": resolved_pid,
+                })
+
+        if roster_records:
+            game_db.table("game_rosters").upsert(
+                roster_records,
+                on_conflict="game_key,team_id,shirt_number",
+            ).execute()
+            print(f"✅ Upserted {len(roster_records)} game_rosters rows for {game_key}")
+    except Exception as e:
+        log.warning("Failed to upsert game_rosters for game %s: %s", numeric_id, e)
+
     # --- Insert shot chart (reads per-team shots from tm[side]["shot"]) ---
     # Build PBP clock map: actionNumber -> clock string (shots have no clock field)
     pbp_clock_map = {}
@@ -604,8 +642,28 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             s2 = e.get("s2", "")
             score = f"{s1}-{s2}" if s1 and s2 else None
 
+            # team_score / opp_score: s1 is team-1 score, s2 is team-2 score
+            try:
+                _s1_int = int(s1) if s1 != "" else None
+                _s2_int = int(s2) if s2 != "" else None
+            except (ValueError, TypeError):
+                _s1_int = _s2_int = None
+            if tno == 1 or str(tno) == "1":
+                _team_score, _opp_score = _s1_int, _s2_int
+            elif tno == 2 or str(tno) == "2":
+                _team_score, _opp_score = _s2_int, _s1_int
+            else:
+                _team_score, _opp_score = None, None
+
             # Keep qualifiers as array
             qualifiers = e.get("qualifier", [])
+
+            # pno: raw numeric player roster key from the API
+            _pno = e.get("pno")
+            try:
+                _pno = int(_pno) if _pno is not None else None
+            except (ValueError, TypeError):
+                _pno = None
 
             pbp_record = {
                 "league_id": league_id,
@@ -627,6 +685,12 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 "x_coord": None,
                 "y_coord": None,
                 "description": None,
+                "shirt_number": str(e.get("shirtNumber")) if e.get("shirtNumber") is not None else None,
+                "pno": _pno,
+                "period_type": e.get("periodType"),
+                "previous_action": e.get("previousAction"),
+                "team_score": _team_score,
+                "opp_score": _opp_score,
             }
             pbp_records.append(pbp_record)
 
@@ -651,6 +715,14 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             print(f"✅ Inserted {inserted_count} new play-by-play events into live_events")
     except Exception as e:
         print(f"⚠️  Error in play-by-play processing: {e}")
+
+    # --- Build lineup stints ---
+    # Only run if roster and PBP data are present; log a warning rather than failing.
+    try:
+        from app.utils.lineup_builder import build_lineups_for_game
+        build_lineups_for_game(game_key=game_key, league_id=league_id)
+    except Exception as e:
+        log.warning("Lineup builder failed for game %s (non-fatal): %s", game_key, e)
 
 # ----------------------------
 # Change Detection Helper

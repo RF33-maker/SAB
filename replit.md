@@ -33,6 +33,15 @@ Key API endpoints include `/api/parse` for file uploads, `/start` and `/reset` f
 -   **Excel Parsing (Bulk Import)**: Employs Pandas for structured data processing, featuring a field mapping system for standardization and optional "Pool" column support. It prioritizes schedule-first processing, adding games to `game_schedule` before fetching LiveStats. Smart change detection skips unchanged games on repeat uploads, significantly reducing database calls.
 -   **Live Game Parser (Real-time)**: A continuous polling system (`app/live_parser.py`) processes live games from `game_schedule` data.json URLs. It extracts comprehensive game data (team stats, player stats, plays, shots), normalizes player/team names, and syncs data to `team_stats`, `player_stats`, `live_events`, and `shot_chart`. A status field system (`live` vs. `final`) manages data integrity and optimizes performance by excluding finalized games from polling.
 -   **Play-by-Play Backfill System**: Backfills historical play-by-play data from FIBA LiveStats JSON into the `live_events` table, including an optimized fuzzy player matching system and team name normalization.
+-   **Lineup Analytics Pipeline**: A full 5-man lineup tracking and on/off analytics pipeline built on top of the PBP infrastructure:
+    -   `live_events` extended with `shirt_number`, `pno`, `period_type`, `previous_action`, `team_score`, `opp_score` for lineup reconstruction.
+    -   `game_rosters` table populated during game parsing (one row per player per game, includes starter flag).
+    -   `lineup_stints` table stores each continuous 5-man lineup period per team with full stat attribution (points for/against, FG/FT, rebounds, assists, turnovers, fouls, steals, blocks, possession stubs).
+    -   `player_on_court_stints` table expands each stint into one row per player for on/off analysis.
+    -   `app/utils/lineup_builder.py`: standalone module that reconstructs lineups from raw PBP, handles substitution pairing, period boundaries, and missing-player edge cases with detailed logging. Deterministic `lineup_key` built from sorted player UUIDs (fallback to name+shirt tokens when IDs unavailable).
+    -   `app/backfill_lineups.py`: backfill script with `--dry-run`, `--game-key`, `--league-id`, and `--force` flags.
+    -   SQL migration: `migrations/lineup_pipeline.sql` (ALTER live_events + CREATE game_rosters/lineup_stints/player_on_court_stints for both public and test schemas).
+    -   SQL views: `lineup_summary` (lineup aggregates with rating stubs) and `player_on_off_summary` (player on-court aggregates with rating stubs) added to `supabase/views.sql`.
 -   **Deduplication System**: Handles team name variations and gender markers through alias mapping and strips gender indicators. Player fuzzy matching (85% similarity threshold) prevents duplicate player records within the same team. Maintenance scripts (`cleanup_duplicate_teams.py`, `cleanup_duplicate_players.py`) are available for merging existing duplicates.
 
 ### Data Storage
