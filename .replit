@@ -61,3 +61,7 @@ outputType = "console"
 
 [userenv.shared]
 ENABLE_OPENAI = "true"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000
