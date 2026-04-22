@@ -1,0 +1,384 @@
+I need you to help me implement lineup tracking and on/off metrics in my Swish Assistant backend.
+
+Important context:
+- My app uses Python/Flask and Supabase.
+- I already parse game data from LiveStats / Genius-style JSON into my database.
+- I already have play-by-play data or I am adding it now.
+- I want to build this the right way so I can support:
+  1. lineup tracking
+  2. on/off stats
+  3. lineup plus/minus
+  4. later: possessions, offensive rating, defensive rating, net rating, and advanced lineup analytics
+- Do NOT try to calculate lineup or on/off directly from box score tables alone.
+- The system must be based on play-by-play + starters + substitutions.
+
+What I need from you:
+I want a phased implementation plan and then the actual code changes in a safe order.
+
+-----------------------------------
+GOAL
+-----------------------------------
+
+Build a lineup analytics pipeline with this structure:
+
+1. Store raw play-by-play events
+2. Store per-game roster + starter information
+3. Build lineup stints from play-by-play
+4. Build player-on-court stint rows from lineup stints
+5. Add SQL views for lineup summary and player on/off summary
+
+The design should allow me to later improve possessions logic without needing to rebuild the schema.
+
+-----------------------------------
+REQUIRED DATABASE DESIGN
+-----------------------------------
+
+Please implement or prepare these tables in Supabase.
+
+1) live_events
+Purpose:
+- raw event stream from play-by-play
+- must support lineup reconstruction
+
+Fields I want:
+- id
+- game_key
+- league_id
+- team_id if available
+- tno
+- period
+- period_type
+- clock
+- action_number
+- previous_action
+- pno
+- player_name
+- shirt_number
+- action_type
+- sub_type
+- success
+- scoring
+- points
+- qualifiers (jsonb if possible)
+- team_score
+- opp_score
+- created_at
+
+Notes:
+- action_number is critical
+- sorting should be based primarily on action_number
+- keep naming aligned with my current naming conventions where possible
+
+2) game_rosters
+Purpose:
+- one row per player per game
+- contains starter flag and game-specific team assignment
+
+Fields I want:
+- id
+- game_key
+- league_id
+- team_id
+- team_no
+- player_id if I can resolve it
+- player_name
+- shirt_number
+- starter
+- active
+- created_at
+
+3) lineup_stints
+Purpose:
+- one row per team per uninterrupted 5-man lineup stint
+
+Fields I want:
+- id
+- game_key
+- league_id
+- team_id
+- team_no
+- period
+- start_action_number
+- end_action_number
+- start_clock
+- end_clock
+- lineup_key
+- player_1_id
+- player_2_id
+- player_3_id
+- player_4_id
+- player_5_id
+- seconds_played
+- points_for
+- points_against
+- possessions_for
+- possessions_against
+- fgm
+- fga
+- fg3m
+- fg3a
+- ftm
+- fta
+- oreb
+- dreb
+- tov
+- opp_fgm
+- opp_fga
+- opp_fg3m
+- opp_fg3a
+- opp_ftm
+- opp_fta
+- opp_oreb
+- opp_dreb
+- opp_tov
+- created_at
+
+Notes:
+- lineup_key should be deterministic and built from sorted player IDs if possible
+- if player_id is not available yet, use a fallback key built from team + player_name + shirt_number, but structure it so player_id can replace it later
+
+4) player_on_court_stints
+Purpose:
+- bridge table between players and lineup stints
+- makes on/off aggregation easy
+
+Fields I want:
+- id
+- game_key
+- league_id
+- team_id
+- team_no
+- player_id
+- player_name if needed as fallback
+- lineup_stint_id
+- seconds_played
+- points_for
+- points_against
+- possessions_for
+- possessions_against
+- created_at
+
+-----------------------------------
+IMPLEMENTATION REQUIREMENTS
+-----------------------------------
+
+I want the implementation done in phases, not all at once.
+
+PHASE 1: Review existing codebase
+- Inspect my current parser structure
+- Inspect how play-by-play is currently parsed and stored
+- Inspect current Supabase schema
+- Identify which existing files should be updated
+- Tell me exactly which files you plan to modify before doing large changes
+
+PHASE 2: Schema migration
+- Create SQL migration(s) for the new tables
+- Reuse my existing conventions where possible
+- Do not break my current parser flow
+- If a table already exists, adjust rather than duplicate unless duplication is clearly necessary
+
+PHASE 3: Ensure raw PBP ingestion is solid
+- Confirm raw play-by-play events are saved with:
+  - game_key
+  - action_number
+  - period
+  - clock
+  - team number
+  - player number
+  - player name
+  - action type
+  - sub type
+- If not, update the parser so this data is saved correctly
+
+PHASE 4: Add game_rosters ingestion
+- From the parsed team/player section, build and save game_rosters rows
+- Capture:
+  - game_key
+  - league_id
+  - team_no
+  - team_id if available
+  - player_name
+  - shirt_number
+  - starter
+  - active
+- If player_id resolution is already available in my project, use it
+- If not, use a safe fallback for now
+
+PHASE 5: Build lineup reconstruction logic
+Create a Python utility that:
+- takes one game’s roster + play-by-play
+- identifies each team’s starting five using starter flag
+- walks through play-by-play in action_number order
+- tracks the current 5 players on court for each team
+- handles substitution events using actionType = substitution and subType = in/out
+- closes a lineup stint when a substitution changes the lineup
+- opens a new lineup stint after the sub
+- stores all lineup stint rows in lineup_stints
+
+Important:
+- substitutions may appear as separate “out” and “in” rows
+- the code must pair them safely
+- do not assume lineup changes from box scores
+- use the actual play-by-play state
+
+PHASE 6: Attribute events to lineup stints
+For each event in the stint:
+- update the active lineup stint for the relevant team
+- update opponent stats for the opposite team’s active lineup stint
+
+Examples:
+- made 2pt:
+  - scoring team gets points_for +2, fgm +1, fga +1
+  - opponent gets points_against +2, opp_fgm +1, opp_fga +1
+- made 3pt:
+  - scoring team gets points_for +3, fgm +1, fga +1, fg3m +1, fg3a +1
+  - opponent gets points_against +3, opp_fgm +1, opp_fga +1, opp_fg3m +1, opp_fg3a +1
+- missed shot:
+  - team gets attempt
+  - opponent gets opp attempt
+- rebounds:
+  - assign offensive or defensive rebound correctly
+- turnovers:
+  - assign tov and opp_tov correctly
+- free throws:
+  - track ftm/fta and opponent equivalents
+
+For now:
+- possessions can start as estimated or left 0 if the possession parser is not ready yet
+- structure it so we can add possession logic later without changing the tables
+
+PHASE 7: Build player_on_court_stints rows
+After lineup_stints are built:
+- insert one row per player in the lineup stint into player_on_court_stints
+- carry over:
+  - game_key
+  - league_id
+  - team_id
+  - team_no
+  - player_id / fallback
+  - lineup_stint_id
+  - seconds_played
+  - points_for
+  - points_against
+  - possessions_for
+  - possessions_against
+
+PHASE 8: Add SQL views
+Create at least these views:
+
+1. lineup_summary
+- aggregated by lineup_key, team, and season context if available
+- includes:
+  - games played
+  - total minutes
+  - total points_for
+  - total points_against
+  - plus_minus
+  - possessions_for
+  - possessions_against
+  - offensive_rating if possessions available
+  - defensive_rating if possessions available
+  - net_rating if possessions available
+
+2. player_on_off_summary
+- aggregated by player
+- includes:
+  - minutes_on
+  - points_for_on
+  - points_against_on
+  - possessions_on
+  - ORtg_on
+  - DRtg_on
+  - Net_on
+- if off-court can be computed cleanly from team totals in a view, do that too
+- if not, prepare the view for on-court first and note how off-court should be added next
+
+-----------------------------------
+IMPORTANT EDGE CASES
+-----------------------------------
+
+Please account for these:
+
+1. Quarter starts
+- do not blindly assume end-of-quarter lineup always carries into next quarter if the feed indicates otherwise
+- use substitutions and available roster information carefully
+
+2. Substitution pairing
+- feeds may log “out” and “in” as separate adjacent events
+- handle that safely
+
+3. Missing player_id
+- if player_id cannot always be resolved, use a fallback identifier consistently
+- do not let that block the implementation
+
+4. Team rebounds and team turnovers
+- handle them without breaking lineup logic
+
+5. Technical fouls / bench technicals
+- these should not break stint tracking
+
+6. Incomplete or dirty play-by-play
+- add defensive checks and logs
+- if lineup cannot be resolved at a point, log it clearly and fail gracefully rather than corrupt data silently
+
+-----------------------------------
+CODING STYLE / OUTPUT REQUIREMENTS
+-----------------------------------
+
+I want you to work carefully and incrementally.
+
+Please do the following:
+- First inspect the codebase and tell me:
+  1. which files currently handle parsing
+  2. which files you plan to change
+  3. whether any existing tables already overlap with this design
+- Then create the SQL migration(s)
+- Then implement the Python utilities
+- Then wire them into the parse pipeline
+- Then show me the exact code changes file by file
+
+Do not do a huge blind refactor.
+Do not remove existing working functionality unless absolutely necessary.
+Prefer additive changes.
+
+Please also:
+- add logging around lineup reconstruction
+- add comments where logic is not obvious
+- keep helper functions modular
+- separate raw parsing from derived analytics generation
+
+-----------------------------------
+ARCHITECTURE PREFERENCE
+-----------------------------------
+
+I want this split conceptually into:
+
+- raw ingestion
+- derived lineup generation
+- derived player-on-floor mapping
+- summary views
+
+If possible, create a utility module such as:
+- lineup_builder.py
+or similar
+
+That module should:
+- load one game’s raw events + roster
+- reconstruct lineups
+- output lineup_stints rows
+- output player_on_court_stints rows
+
+-----------------------------------
+DELIVERABLES I WANT
+-----------------------------------
+
+Please give me:
+
+1. a summary of current relevant files
+2. a safe implementation plan
+3. SQL migration(s)
+4. Python code changes
+5. explanation of how to run/backfill this for existing games
+6. any follow-up tasks needed for possessions/on-off refinement
+
+Start by reviewing the codebase and identifying the exact files to update before making the main changes.
