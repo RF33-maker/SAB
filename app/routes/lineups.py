@@ -11,6 +11,54 @@ def _valid_only_flag() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/lineups/top  — cross-game best lineup rankings
+# ---------------------------------------------------------------------------
+
+@lineups_bp.route("/api/lineups/top", methods=["GET"])
+def get_top_lineups():
+    """
+    Aggregate lineup_stints across games, grouped by (lineup_key, team_id).
+
+    Returns ranked 5-man units with cumulative totals and efficiency ratings.
+
+    Query params:
+      league_id   (str)  — scope results to a specific season/league
+      min_seconds (int)  — exclude lineups with less total seconds (default 0)
+      valid_only  (bool) — if 'true', exclude is_valid_lineup=False stints
+    """
+    try:
+        query = (
+            supabase.table("lineup_stints")
+            .select(
+                "lineup_key,lineup_player_ids,lineup_names,team_id,league_id,"
+                "seconds_played,points_for,points_against,"
+                "possessions_for,possessions_against,is_valid_lineup"
+            )
+        )
+
+        league_id = request.args.get("league_id", "").strip()
+        if league_id:
+            query = query.eq("league_id", league_id)
+
+        if _valid_only_flag():
+            query = query.eq("is_valid_lineup", True)
+
+        rows = query.execute().data or []
+
+        try:
+            min_seconds = int(request.args.get("min_seconds", 0))
+        except (ValueError, TypeError):
+            min_seconds = 0
+
+        aggregated = _aggregate_lineup_rows(rows, min_seconds, league_id or None)
+        return jsonify(aggregated), 200
+
+    except Exception as exc:
+        log.error("GET /api/lineups/top error: %s", exc, exc_info=True)
+        return jsonify({"message": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # GET /api/lineups/<game_key>
 # ---------------------------------------------------------------------------
 
@@ -219,6 +267,80 @@ def _merge_agg_buckets(buckets: list) -> dict:
     }
     merged["net_points"] = merged["points_for"] - merged["points_against"]
     return merged
+
+
+def _aggregate_lineup_rows(
+    rows: list,
+    min_seconds: int = 0,
+    league_id: str | None = None,
+) -> list:
+    """
+    Group lineup_stints rows by (lineup_key, team_id) and sum numeric stats.
+
+    Computes efficiency ratings (per-100-possessions) where possession data
+    is available.  Returns results sorted by net_rating desc, then
+    seconds_played desc.
+
+    Args:
+        rows:        Raw lineup_stints rows from Supabase.
+        min_seconds: Exclude buckets whose total seconds_played < this value.
+        league_id:   The league_id filter that was applied to the query.
+                     When provided it is echoed back in every result row so
+                     the field is authoritative.  When None (no filter) the
+                     field is set to None to avoid implying a single league
+                     when the data may span multiple leagues.
+    """
+    buckets: dict = {}
+    for r in rows:
+        key = (r.get("lineup_key") or "", r.get("team_id") or "")
+        if key not in buckets:
+            buckets[key] = {
+                "lineup_key": r.get("lineup_key"),
+                "lineup_player_ids": r.get("lineup_player_ids"),
+                "lineup_names": r.get("lineup_names"),
+                "team_id": r.get("team_id"),
+                "league_id": league_id,
+                "stint_count": 0,
+                "seconds_played": 0,
+                "points_for": 0,
+                "points_against": 0,
+                "possessions_for": 0,
+                "possessions_against": 0,
+            }
+        b = buckets[key]
+        b["stint_count"] += 1
+        b["seconds_played"] += r.get("seconds_played") or 0
+        b["points_for"] += r.get("points_for") or 0
+        b["points_against"] += r.get("points_against") or 0
+        b["possessions_for"] += r.get("possessions_for") or 0
+        b["possessions_against"] += r.get("possessions_against") or 0
+
+    result = []
+    for b in buckets.values():
+        if b["seconds_played"] < min_seconds:
+            continue
+
+        b["net_points"] = b["points_for"] - b["points_against"]
+
+        pf = b["possessions_for"]
+        pa = b["possessions_against"]
+        b["off_rating"] = round(b["points_for"] / pf * 100, 1) if pf > 0 else None
+        b["def_rating"] = round(b["points_against"] / pa * 100, 1) if pa > 0 else None
+        if b["off_rating"] is not None and b["def_rating"] is not None:
+            b["net_rating"] = round(b["off_rating"] - b["def_rating"], 1)
+        else:
+            b["net_rating"] = None
+
+        result.append(b)
+
+    result.sort(
+        key=lambda x: (
+            x["net_rating"] if x["net_rating"] is not None else float("-inf"),
+            x["seconds_played"],
+        ),
+        reverse=True,
+    )
+    return result
 
 
 def _aggregate_player_rows(rows: list) -> list:
