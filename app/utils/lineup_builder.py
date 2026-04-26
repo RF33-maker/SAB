@@ -645,6 +645,24 @@ def build_lineups_for_game(
     # --- Walk events ---
     current_period = first_event.get("period") if first_event else 1
 
+    # Track which team currently has the ball so we can close open possessions
+    # at period boundaries and game end.  None = unknown (e.g. game start before
+    # first possession-changing event).
+    current_possessor_id: Optional[str] = None
+
+    def _close_open_possession():
+        """
+        If a possession is in-flight (current_possessor_id is known), attribute
+        it to the active stints and return True.  Used at period/game boundaries.
+        """
+        if current_possessor_id and current_possessor_id in team_state:
+            team_state[current_possessor_id].possessions_for += 1
+            for _tid, _tl in team_state.items():
+                if _tid != current_possessor_id:
+                    _tl.possessions_against += 1
+            return True
+        return False
+
     for evt in events:
         action_type = (evt.get("action_type") or "").lower()
         period = evt.get("period") or current_period
@@ -655,6 +673,9 @@ def build_lineups_for_game(
         # --- Period boundary ---
         if period != current_period:
             new_period_start_clock = f"{_period_duration(period) // 60}:00"
+            # Close any open possession before flushing the period
+            _close_open_possession()
+            current_possessor_id = None
             for tl in team_state.values():
                 # Flush any pending subs before closing period
                 tl.flush_pending_subs(
@@ -736,10 +757,12 @@ def build_lineups_for_game(
                 team_state[event_team_id].add_stat(action_type, "", True, False)
 
         # --- Possession attribution ---
+        # Possessions are tracked via explicit ownership (current_possessor_id).
         # A possession ends on: made FG, turnover, or defensive rebound.
-        # Offensive rebounds continue the same possession (no increment).
-        # Free throws are not counted as separate possession enders here —
-        # the surrounding made FG / defensive rebound events cover them.
+        # Offensive rebounds continue the same possession (possessor unchanged).
+        # Period/game boundaries close any open possession via _close_open_possession().
+        # Free throws are not counted as independent possession enders; the surrounding
+        # made FG or defensive rebound after the last missed FT covers the sequence.
         if action_type in ("2pt", "3pt"):
             success = bool(evt.get("success"))
             scoring = bool(evt.get("scoring"))
@@ -749,26 +772,41 @@ def build_lineups_for_game(
                 for tid, tl in team_state.items():
                     if tid != event_team_id:
                         tl.possessions_against += 1
+                # Opponent now has possession
+                current_possessor_id = next(
+                    (tid for tid in team_state if tid != event_team_id), None
+                )
 
         elif action_type == "turnover":
             if event_team_id and event_team_id in team_state:
-                # Turnovers team's possession ended
                 team_state[event_team_id].possessions_for += 1
                 for tid, tl in team_state.items():
                     if tid != event_team_id:
                         tl.possessions_against += 1
+                # Opponent gains possession
+                current_possessor_id = next(
+                    (tid for tid in team_state if tid != event_team_id), None
+                )
 
         elif action_type == "rebound":
-            if (evt.get("sub_type") or "").lower() == "defensive":
+            reb_sub_type = (evt.get("sub_type") or "").lower()
+            if reb_sub_type == "defensive" and event_team_id and event_team_id in team_state:
                 # Defensive rebound: the team that missed (NOT the rebounder) ends their possession
-                if event_team_id and event_team_id in team_state:
-                    team_state[event_team_id].possessions_against += 1
+                team_state[event_team_id].possessions_against += 1
                 for tid, tl in team_state.items():
                     if tid != event_team_id:
                         tl.possessions_for += 1
+                # Rebounder now has possession
+                current_possessor_id = event_team_id
+            elif reb_sub_type == "offensive" and event_team_id and event_team_id in team_state:
+                # Offensive rebound: same team retains possession
+                current_possessor_id = event_team_id
 
         # --- End-of-game / end-of-period markers ---
         if action_type in ("gameend", "endofgame", "endofperiod", "periodend"):
+            # Close any possession still open at the buzzer
+            _close_open_possession()
+            current_possessor_id = None
             for tl in team_state.values():
                 tl.close_stint(game_secs, action, clock)
                 tl.stint_start_action = None  # don't reopen
@@ -780,6 +818,8 @@ def build_lineups_for_game(
         last_clock = last_evt.get("clock") or "00:00"
         last_action = last_evt.get("action_number") or 0
         last_secs = _event_game_secs(last_period, last_clock)
+        # Close any possession still open at the true end of the game
+        _close_open_possession()
         for tl in team_state.values():
             if tl._pending_subs:
                 tl.flush_pending_subs(last_secs, last_action, last_clock, last_period)
