@@ -228,6 +228,8 @@ class _TeamLineup:
         self.fouls = 0
         self.steals = 0
         self.blocks = 0
+        self.possessions_for = 0
+        self.possessions_against = 0
 
     def _player_list(self) -> list:
         return list(self.active.values())
@@ -307,8 +309,8 @@ class _TeamLineup:
             "fouls": self.fouls,
             "steals": self.steals,
             "blocks": self.blocks,
-            "possessions_for": 0,
-            "possessions_against": 0,
+            "possessions_for": self.possessions_for,
+            "possessions_against": self.possessions_against,
             "is_valid_lineup": is_valid,
         }
         self.completed_stints.append(stint)
@@ -733,6 +735,38 @@ def build_lineups_for_game(
             if event_team_id and event_team_id in team_state:
                 team_state[event_team_id].add_stat(action_type, "", True, False)
 
+        # --- Possession attribution ---
+        # A possession ends on: made FG, turnover, or defensive rebound.
+        # Offensive rebounds continue the same possession (no increment).
+        # Free throws are not counted as separate possession enders here —
+        # the surrounding made FG / defensive rebound events cover them.
+        if action_type in ("2pt", "3pt"):
+            success = bool(evt.get("success"))
+            scoring = bool(evt.get("scoring"))
+            if success and scoring and event_team_id and event_team_id in team_state:
+                # Scoring team's possession ended with a make
+                team_state[event_team_id].possessions_for += 1
+                for tid, tl in team_state.items():
+                    if tid != event_team_id:
+                        tl.possessions_against += 1
+
+        elif action_type == "turnover":
+            if event_team_id and event_team_id in team_state:
+                # Turnovers team's possession ended
+                team_state[event_team_id].possessions_for += 1
+                for tid, tl in team_state.items():
+                    if tid != event_team_id:
+                        tl.possessions_against += 1
+
+        elif action_type == "rebound":
+            if (evt.get("sub_type") or "").lower() == "defensive":
+                # Defensive rebound: the team that missed (NOT the rebounder) ends their possession
+                if event_team_id and event_team_id in team_state:
+                    team_state[event_team_id].possessions_against += 1
+                for tid, tl in team_state.items():
+                    if tid != event_team_id:
+                        tl.possessions_for += 1
+
         # --- End-of-game / end-of-period markers ---
         if action_type in ("gameend", "endofgame", "endofperiod", "periodend"):
             for tl in team_state.values():
@@ -769,12 +803,11 @@ def build_lineups_for_game(
     # --- Write to Supabase ---
     db = _get_db()
 
-    # Delete existing stints for this game first (idempotent)
-    try:
-        db.table("lineup_stints").delete().eq("game_key", game_key).execute()
-        db.table("player_on_court_stints").delete().eq("game_key", game_key).execute()
-    except Exception as exc:
-        log.error("game=%s: failed to delete existing stints: %s", game_key, exc)
+    # Delete existing stints for this game first (idempotent).
+    # Fetch IDs first then delete in small batches to avoid Supabase statement timeouts
+    # that occur when deleting many rows via a single filter query.
+    _delete_by_game_key(db, "lineup_stints", game_key)
+    _delete_by_game_key(db, "player_on_court_stints", game_key)
 
     # Insert lineup_stints in chunks
     _bulk_insert(db, "lineup_stints", all_stints, game_key)
@@ -856,8 +889,41 @@ def build_lineups_for_game(
 
 
 # ---------------------------------------------------------------------------
-# Utility: bulk insert with chunking
+# Utility: bulk insert / delete with chunking
 # ---------------------------------------------------------------------------
+
+def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50):
+    """
+    Delete all rows for game_key from table using ID-based batch deletes.
+    A single DELETE ... WHERE game_key=X can time out in Supabase when the
+    table has many rows; fetching IDs first and deleting in small batches is
+    much more reliable.
+    """
+    try:
+        id_res = (
+            db.table(table)
+            .select("id")
+            .eq("game_key", game_key)
+            .execute()
+        )
+        ids = [r["id"] for r in (id_res.data or [])]
+    except Exception as exc:
+        log.warning("game=%s: could not fetch IDs from %s for deletion: %s", game_key, table, exc)
+        return
+
+    if not ids:
+        return
+
+    for i in range(0, len(ids), chunk_size):
+        batch = ids[i:i + chunk_size]
+        try:
+            db.table(table).delete().in_("id", batch).execute()
+        except Exception as exc:
+            log.error(
+                "game=%s: failed deleting batch from %s (offset=%d): %s",
+                game_key, table, i, exc,
+            )
+
 
 def _bulk_insert(db, table: str, rows: list, game_key: str, chunk_size: int = 200):
     if not rows:
