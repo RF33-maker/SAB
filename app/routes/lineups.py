@@ -23,6 +23,8 @@ def get_lineups(game_key: str):
       team_id     (str)  — filter to a single team
       valid_only  (bool) — if 'true', exclude is_valid_lineup=False rows
     """
+    if not game_key or not game_key.strip():
+        return jsonify({"message": "game_key is required"}), 400
     try:
         query = (
             supabase.table("lineup_stints")
@@ -67,6 +69,8 @@ def get_on_off_game(game_key: str):
                             by fetching only rows whose stint has is_valid_lineup=True
                             via a sub-select through lineup_stints.id = stint_id)
     """
+    if not game_key or not game_key.strip():
+        return jsonify({"message": "game_key is required"}), 400
     try:
         query = (
             supabase.table("player_on_court_stints")
@@ -111,6 +115,8 @@ def get_on_off_player(player_id: str):
     Query params:
       valid_only  (bool) — if 'true', exclude invalid-lineup stints
     """
+    if not player_id or not player_id.strip():
+        return jsonify({"message": "player_id is required"}), 400
     try:
         query = (
             supabase.table("player_on_court_stints")
@@ -145,13 +151,14 @@ def get_on_off_player(player_id: str):
         for gk, game_rows in per_game.items():
             agg = _aggregate_player_rows(game_rows)
             if agg:
-                entry = agg[0]
+                entry = _merge_agg_buckets(agg)
                 entry["game_key"] = gk
                 games_out.append(entry)
 
+        # Merge ALL per-(player_id,team_id) buckets into one season total so
+        # players who changed teams during the season don't lose rows.
         all_agg = _aggregate_player_rows(rows)
-        totals = all_agg[0] if all_agg else {}
-        totals.pop("game_key", None)
+        totals = _merge_agg_buckets(all_agg) if all_agg else {}
 
         return jsonify({
             "player_id": player_id,
@@ -184,6 +191,34 @@ def _fetch_valid_stint_ids(game_key: str) -> set:
     except Exception as exc:
         log.warning("Could not fetch valid stint IDs for game=%s: %s", game_key, exc)
         return set()
+
+
+def _merge_agg_buckets(buckets: list) -> dict:
+    """
+    Collapse multiple per-(player_id,team_id) aggregated buckets into a single
+    totals dict.  Needed for players who changed teams mid-season so that season
+    totals are complete even when _aggregate_player_rows returns >1 bucket.
+    If team_id is consistent across all buckets it is preserved; otherwise None.
+    """
+    if not buckets:
+        return {}
+    if len(buckets) == 1:
+        return dict(buckets[0])
+    team_ids = {b.get("team_id") for b in buckets}
+    merged: dict = {
+        "player_id": buckets[0].get("player_id"),
+        "player_name": buckets[0].get("player_name"),
+        "shirt_number": buckets[0].get("shirt_number"),
+        "team_id": team_ids.pop() if len(team_ids) == 1 else None,
+        "stint_count": sum(b["stint_count"] for b in buckets),
+        "seconds_played": sum(b["seconds_played"] for b in buckets),
+        "points_for": sum(b["points_for"] for b in buckets),
+        "points_against": sum(b["points_against"] for b in buckets),
+        "possessions_for": sum(b["possessions_for"] for b in buckets),
+        "possessions_against": sum(b["possessions_against"] for b in buckets),
+    }
+    merged["net_points"] = merged["points_for"] - merged["points_against"]
+    return merged
 
 
 def _aggregate_player_rows(rows: list) -> list:
