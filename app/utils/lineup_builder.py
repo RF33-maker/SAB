@@ -752,7 +752,7 @@ def build_lineups_for_game(
             if event_team_id and event_team_id in team_state:
                 team_state[event_team_id].add_stat("rebound", sub_type, True, False)
 
-        elif action_type in ("turnover", "foul", "steal", "block"):
+        elif action_type in ("turnover", "foul", "steal", "block", "assist"):
             if event_team_id and event_team_id in team_state:
                 team_state[event_team_id].add_stat(action_type, "", True, False)
 
