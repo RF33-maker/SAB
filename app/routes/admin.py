@@ -144,3 +144,164 @@ def backfill_lineups():
         "stints_written": stints_written,
         "errors": error_list,
     }), 200
+
+
+def _league_has_advanced_stats(league_id: str) -> bool:
+    """
+    Return True if at least one player_stats row for this league
+    has a non-null efg_percent, indicating advanced stats are already computed.
+    """
+    try:
+        res = (
+            supabase.table("player_stats")
+            .select("id")
+            .eq("league_id", league_id)
+            .not_.is_("efg_percent", "null")
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+    except Exception as exc:
+        log.warning("Could not check advanced stats for league %s: %s", league_id, exc)
+        return False
+
+
+_LEAGUE_PAGE_SIZE = 1000
+
+
+def _fetch_league_ids(league_id_filter: str = None) -> list:
+    """
+    Return distinct league_id values from player_stats,
+    optionally restricted to a single league.
+
+    Paginates through player_stats in chunks of _LEAGUE_PAGE_SIZE to ensure
+    all leagues are discovered even when the table exceeds PostgREST's
+    default row limit.
+
+    Raises the underlying exception on a DB/network failure so callers can
+    distinguish a genuine empty result from a query failure.
+    """
+    seen: set = set()
+    ids: list = []
+    offset = 0
+
+    while True:
+        q = (
+            supabase.table("player_stats")
+            .select("league_id")
+            .range(offset, offset + _LEAGUE_PAGE_SIZE - 1)
+        )
+        if league_id_filter:
+            q = q.eq("league_id", league_id_filter)
+
+        res = q.execute()
+        page = res.data or []
+
+        for row in page:
+            lid = row.get("league_id")
+            if lid and lid not in seen:
+                seen.add(lid)
+                ids.append(lid)
+
+        if len(page) < _LEAGUE_PAGE_SIZE:
+            break
+
+        offset += _LEAGUE_PAGE_SIZE
+
+    return ids
+
+
+@admin_bp.route("/api/admin/backfill-advanced-stats", methods=["POST"])
+def backfill_advanced_stats():
+    """
+    Trigger advanced-stats backfill for all leagues (or a single league).
+
+    Auth:
+      X-Admin-Key header must match the ADMIN_SECRET environment variable.
+
+    Query params:
+      league_id  (str)  — scope to a specific league UUID
+      force      (bool) — if 'true', reprocess leagues that already have advanced stats
+
+    Response JSON:
+      leagues_processed  int   — leagues for which compute_advanced_stats succeeded
+      leagues_skipped    int   — leagues skipped (already populated, or non-success status)
+      errors             list  — per-league error dicts for hard exceptions
+    """
+    if not _check_auth():
+        return jsonify({"message": "Forbidden"}), 403
+
+    league_id_filter = request.args.get("league_id", "").strip() or None
+    force = request.args.get("force", "").lower() == "true"
+
+    from app.utils.compute_advanced_stats import compute_advanced_stats
+
+    try:
+        league_ids = _fetch_league_ids(league_id_filter)
+    except Exception as exc:
+        log.error("Failed to discover leagues from player_stats: %s", exc, exc_info=True)
+        return jsonify({"message": f"Failed to query player_stats for leagues: {exc}"}), 500
+
+    if not league_ids:
+        return jsonify({
+            "leagues_processed": 0,
+            "leagues_skipped": 0,
+            "errors": [],
+        }), 200
+
+    log.info(
+        "Advanced-stats backfill triggered: %d leagues (force=%s)",
+        len(league_ids),
+        force,
+    )
+
+    leagues_processed = 0
+    leagues_skipped = 0
+    error_list: list = []
+
+    for lid in league_ids:
+        if not force and _league_has_advanced_stats(lid):
+            log.info(
+                "league=%s already has advanced stats, skipping (pass force=true to reprocess)",
+                lid,
+            )
+            leagues_skipped += 1
+            continue
+
+        log.info("Processing advanced stats for league=%s", lid)
+        try:
+            result = compute_advanced_stats(lid)
+            status = result.get("status", "unknown")
+            if status == "success":
+                leagues_processed += 1
+                log.info(
+                    "league=%s complete — teams=%s players=%s",
+                    lid,
+                    result.get("teams_processed"),
+                    result.get("players_processed"),
+                )
+            else:
+                leagues_skipped += 1
+                err_msg = result.get("error") or f"status={status}"
+                log.warning(
+                    "league=%s finished with status=%s: %s",
+                    lid,
+                    status,
+                    err_msg,
+                )
+                error_list.append({"league_id": lid, "status": status, "error": err_msg})
+        except Exception as exc:
+            log.error(
+                "Failed to compute advanced stats for league=%s: %s",
+                lid,
+                exc,
+                exc_info=True,
+            )
+            leagues_skipped += 1
+            error_list.append({"league_id": lid, "status": "exception", "error": str(exc)})
+
+    return jsonify({
+        "leagues_processed": leagues_processed,
+        "leagues_skipped": leagues_skipped,
+        "errors": error_list,
+    }), 200
