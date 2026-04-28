@@ -148,19 +148,23 @@ def backfill_lineups():
 
 def _league_has_advanced_stats(league_id: str) -> bool:
     """
-    Return True if at least one player_stats row for this league
-    has a non-null efg_percent, indicating advanced stats are already computed.
+    Return True only when every player_stats row in this league already has
+    a non-null efg_percent (i.e. there are zero gaps).
+
+    Returns False (→ must process) if any row still has efg_percent IS NULL,
+    so partial leagues are never silently skipped.
     """
     try:
         res = (
             supabase.table("player_stats")
             .select("id")
             .eq("league_id", league_id)
-            .not_.is_("efg_percent", "null")
+            .is_("efg_percent", "null")
             .limit(1)
             .execute()
         )
-        return bool(res.data)
+        # Any null row → gaps exist → do not skip
+        return not bool(res.data)
     except Exception as exc:
         log.warning("Could not check advanced stats for league %s: %s", league_id, exc)
         return False
