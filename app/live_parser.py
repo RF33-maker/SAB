@@ -42,7 +42,7 @@ def is_game_finished(data):
     return False
 
 
-def finalize_game_stats(game_key):
+def finalize_game_stats(game_key, league_id=None):
     """Mark all stats for a game as 'final' once the game is complete."""
     try:
         # Update player_stats
@@ -55,6 +55,17 @@ def finalize_game_stats(game_key):
         supabase.table("game_schedule").update({"status": "final"}).eq("game_key", game_key).execute()
         
         print(f"🏁 Game {game_key} marked as FINAL")
+
+        # --- Build lineup stints for the completed game ---
+        # Run non-fatally: a failure here does not affect finalization.
+        if league_id:
+            try:
+                from app.utils.lineup_builder import build_lineups_for_game
+                build_lineups_for_game(game_key=game_key, league_id=league_id)
+                print(f"📋 Lineup stints built for {game_key}")
+            except Exception as lb_exc:
+                print(f"⚠️ Lineup builder failed for {game_key} (non-fatal): {lb_exc}")
+
         return True
     except Exception as e:
         print(f"❌ Error finalizing game {game_key}: {e}")
@@ -183,6 +194,44 @@ def process_game(game):
             insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
             print(f"👤 {len(player_records)} player stats synced for {game_key}")
 
+        # --- Upsert game_rosters (needed for lineup reconstruction) ---
+        try:
+            roster_records = []
+            for side, team in teams.items():
+                team_id = team_id_map.get(side)
+                if not team_id:
+                    continue
+                for pid, player in team.get("pl", {}).items():
+                    full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
+                    if not full_name:
+                        continue
+                    normalized_name = normalize_player_name(full_name)
+                    shirt = player.get("shirtNumber")
+                    try:
+                        pno_int = int(pid)
+                    except (ValueError, TypeError):
+                        pno_int = None
+                    player_id = (player_id_map.get((team_id, normalized_name)) or {}).get("player_id")
+                    roster_records.append({
+                        "game_key": game_key,
+                        "league_id": league_id,
+                        "team_id": team_id,
+                        "team_no": side,
+                        "player_name": normalized_name,
+                        "shirt_number": str(shirt) if shirt is not None else None,
+                        "pno": pno_int,
+                        "starter": bool(player.get("starter")),
+                        "active": bool(player.get("active", True)),
+                        "player_id": player_id,
+                    })
+            if roster_records:
+                supabase.table("game_rosters").upsert(
+                    roster_records,
+                    on_conflict="game_key,team_id,shirt_number",
+                ).execute()
+        except Exception as _re:
+            print(f"⚠️ game_rosters upsert failed for {game_key} (non-fatal): {_re}")
+
         # --- Process live events (plays) ---
         new_plays, shots = [], []
 
@@ -194,6 +243,28 @@ def process_game(game):
             team_id = team_id_map.get(team_no)
             player_info = player_id_map.get((team_id, player_name), {}) if team_id else {}
             player_id = player_info.get("player_id")
+
+            # Build score string and per-team scores
+            _s1 = p.get("s1", "")
+            _s2 = p.get("s2", "")
+            try:
+                _s1_int = int(_s1) if _s1 != "" else None
+                _s2_int = int(_s2) if _s2 != "" else None
+            except (ValueError, TypeError):
+                _s1_int = _s2_int = None
+            if str(team_no) == "1":
+                _team_score, _opp_score = _s1_int, _s2_int
+            elif str(team_no) == "2":
+                _team_score, _opp_score = _s2_int, _s1_int
+            else:
+                _team_score, _opp_score = None, None
+
+            # pno: numeric player roster key
+            _pno = p.get("pno")
+            try:
+                _pno = int(_pno) if _pno is not None else None
+            except (ValueError, TypeError):
+                _pno = None
 
             play = {
                 "game_key": game_key,
@@ -210,9 +281,15 @@ def process_game(game):
                 "qualifiers": p.get("qualifier", []),
                 "success": bool(p.get("success")),
                 "scoring": bool(p.get("scoring")),
-                "score": f"{p.get('s1')}-{p.get('s2')}",
+                "score": f"{_s1}-{_s2}" if _s1 and _s2 else None,
                 "x_coord": p.get("x"),
                 "y_coord": p.get("y"),
+                "shirt_number": str(p.get("shirtNumber")) if p.get("shirtNumber") is not None else None,
+                "pno": _pno,
+                "period_type": p.get("periodType"),
+                "previous_action": p.get("previousAction"),
+                "team_score": _team_score,
+                "opp_score": _opp_score,
             }
             new_plays.append(play)
 
@@ -247,7 +324,7 @@ def process_game(game):
 
         # Check if game is finished and finalize if so
         if is_game_finished(data):
-            finalize_game_stats(game_key)
+            finalize_game_stats(game_key, league_id=league_id)
 
     except Exception as e:
         print(f"❌ Error processing {game_key}: {e}")

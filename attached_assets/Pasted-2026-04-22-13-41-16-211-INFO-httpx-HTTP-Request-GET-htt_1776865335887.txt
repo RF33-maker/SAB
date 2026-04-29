@@ -1,0 +1,15 @@
+2026-04-22 13:41:16,211 INFO httpx: HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/rest/v1/game_schedule?select=game_key%2Cleague_id%2C%22LiveStats+URL%22 "HTTP/2 200 OK"
+2026-04-22 13:41:16,216 INFO backfill_lineups: Found 788 games to process
+2026-04-22 13:41:16,216 INFO backfill_lineups: Processing game=1SXTNZ7JWQU9YLS7SOBM
+2026-04-22 13:41:16,216 INFO lineup_builder: Starting lineup build for game=1SXTNZ7JWQU9YLS7SOBM (dry_run=True)
+2026-04-22 13:41:16,687 INFO httpx: HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/rest/v1/game_rosters?select=team_id%2Cteam_no%2Cplayer_name%2Cshirt_number%2Cpno%2Cstarter%2Cactive%2Cplayer_id&game_key=eq.1SXTNZ7JWQU9YLS7SOBM "HTTP/2 200 OK"
+2026-04-22 13:41:16,689 INFO lineup_builder: Loaded rosters for 0 teams in game 1SXTNZ7JWQU9YLS7SOBM
+2026-04-22 13:41:16,689 WARNING lineup_builder: game=1SXTNZ7JWQU9YLS7SOBM: no roster data, skipping lineup build
+2026-04-22 13:41:16,689 INFO backfill_lineups: Processing game=2026-01-16_Surrey_89ers_vs_B._Braun_Sheffield_Sharks
+2026-04-22 13:41:16,689 INFO lineup_builder: Starting lineup build for game=2026-01-16_Surrey_89ers_vs_B._Braun_Sheffield_Sharks (dry_run=True)
+2026-04-22 13:41:17,108 INFO httpx: HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/rest/v1/game_rosters?select=team_id%2Cteam_no%2Cplayer_name%2Cshirt_number%2Cpno%2Cstarter%2Cactive%2Cplayer_id&game_key=eq.2026-01-16_Surrey_89ers_vs_B._Braun_Sheffield_Sharks "HTTP/2 200 OK"
+2026-04-22 13:41:17,109 INFO lineup_builder: Loaded rosters for 0 teams in game 2026-01-16_Surrey_89ers_vs_B._Braun_Sheffield_Sharks
+2026-04-22 13:41:17,109 WARNING lineup_builder: game=2026-01-16_Surrey_89ers_vs_B._Braun_Sheffield_Sharks: no roster data, skipping lineup build
+2026-04-22 13:41:17,109 INFO backfill_lineups: Processing game=1SXNFZL7CE9HMKTPNAVU
+2026-04-22 13:41:17,109 INFO lineup_builder: Starting lineup build for game=1SXNFZL7CE9HMKTPNAVU (dry_run=True)
+2026-04-22 13:41:17,240 INFO httpx: HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/rest/v1/game_rosters?select=team_id%2Cteam_no%2Cplayer_name%2Cshirt_number%2Cpno%2Cstarter%2Cactive%2Cplayer_id&game_key=eq.1SXNFZL7CE9HMKTPNAVU "HTTP/2 200 OK"

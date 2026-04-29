@@ -1,0 +1,130 @@
+TASK: Populate shot_chart from LiveStats JSON + ensure clean linking to games/teams/players (minimal changes, shot_chart only)
+
+CONTEXT (READ CAREFULLY):
+- We already parse and store: box score (player stats), play-by-play, team stats.
+- Shot chart data exists in the LiveStats JSON but is NOT being parsed, so Supabase public.shot_chart is empty.
+- The shot chart events are NOT top-level. They live per-team:
+    data["tm"][<side>]["shot"]   (one list per team)
+  NOT: data.get("shot")
+
+- We need shot_chart to link cleanly to:
+  1) the correct game -> via game_key
+  2) the correct team -> via team_id
+  3) the correct player -> via player_id
+- Important: DO NOT create players from the shot feed (shot player names are often abbreviated).
+  Instead, link shots to existing players using a roster_map created during the roster/boxscore parse:
+      roster_map[(side, pno)] = player_id
+  Then for each shot:
+      player_id = roster_map.get((side, shot_pno))
+
+CURRENT Supabase TABLE:
+public.shot_chart columns:
+- id bigint PK
+- league_id uuid
+- game_key text
+- team_id uuid
+- player_name text
+- team_no int
+- period int
+- clock text
+- shot_type text
+- sub_type text
+- success boolean
+- x double
+- y double
+- created_at timestamp default now()
+
+MISSING FIELDS REQUIRED FOR CLEAN LINKING + DEDUPE:
+We need to add:
+- player_id uuid NULL
+- action_number int NULL   (from JSON actionNumber)
+And add a unique index so worker re-parses don’t duplicate:
+- unique (game_key, action_number)
+
+GOAL:
+- Parse shot events from BOTH teams and insert into public.shot_chart.
+- Fill: league_id, game_key, team_id, player_id, player_name(raw), team_no, period, shot_type, sub_type, success, x, y, action_number.
+- Leave clock NULL unless shot feed includes a clock; do not attempt complex clock backfill in this task.
+- Use upsert/on_conflict to avoid duplicates using (game_key, action_number).
+
+FILES:
+- Update the existing parser file in repo (json_parser.py / whatever file contains parse_and_store_game()).
+- There is a shot parsing block already but it is wrong (likely does data.get("shot") and wrong field mapping + inserts into wrong table). Fix only shot_chart path.
+
+ACTIONS (DO THESE IN ORDER):
+
+1) SUPABASE MIGRATION (SQL)
+Run/prepare SQL migration (Supabase SQL editor or migration file) to update shot_chart:
+---
+alter table public.shot_chart
+  add column if not exists player_id uuid null,
+  add column if not exists action_number integer null;
+
+create unique index if not exists shot_chart_game_action_uniq
+  on public.shot_chart (game_key, action_number);
+---
+
+2) PARSER UPDATE: Build roster_map when parsing players
+In the part of the parser where we iterate team players (tm[side]["pl"]) and get an existing player_id (via get_or_create_player or existing lookup), add:
+- roster_map[(side, pno)] = player_id
+Where:
+- side is "home"/"away" or whatever keys are used in tm
+- pno comes from the roster iteration key (often a string key -> int)
+
+Do NOT modify how player_id is decided; just capture it.
+
+3) PARSER UPDATE: Extract shots from tm[side]["shot"]
+Replace the incorrect shot logic with:
+- teams = data.get("tm", {})
+- for each side/team in teams:
+    team_id = the same team_id you already create for that side (use existing get_or_create_team logic)
+    team_shots = team.get("shot", []) or []
+    for each shot in team_shots:
+        action_number = shot.get("actionNumber")
+        pno = shot.get("pno")
+        player_id = roster_map.get((side, pno))
+        build record matching DB column names:
+          league_id = league_id
+          game_key = game_key
+          team_id = team_id
+          player_id = player_id (nullable)
+          player_name = shot.get("player") (raw feed name)
+          team_no = shot.get("tno")
+          period = shot.get("per")
+          shot_type = shot.get("actionType")
+          sub_type = shot.get("subType")
+          success = (shot.get("r") == 1)
+          x = shot.get("x")
+          y = shot.get("y")
+          action_number = action_number
+          clock = NULL (unless shot includes clock field; only map if present)
+- Collect into shot_records list.
+
+4) INSERT/UPSERT INTO shot_chart
+Use existing insert helper. Insert into table name EXACTLY "shot_chart".
+Upsert/dedupe using the unique index (game_key, action_number).
+If helper supports conflict keys:
+  insert_supabase("shot_chart", shot_records, conflict_keys="game_key,action_number")
+If helper expects a string, pass the correct value; if helper expects on_conflict param, use that.
+If helper does NOT support multi-column conflict, add an `identifier_duplicate` column is NOT allowed here (we are using proper unique index).
+Prefer using Supabase upsert with on_conflict="game_key,action_number".
+
+5) LOGGING / VALIDATION
+Add minimal logs:
+- Print number of shots found for each side and total records prepared.
+- After insert, print success count inserted/upserted.
+
+VALIDATION CHECKLIST (DO THIS AFTER CODE CHANGE):
+- Run parser on a known JSON game that contains shot data.
+- Confirm public.shot_chart now has rows with x/y, shot_type, sub_type, success populated.
+- Confirm player_id is populated for most/all shots (when roster_map has the pno).
+- Re-run parser for same game; confirm row count does not increase (dedupe works).
+
+CONSTRAINTS:
+- Do NOT refactor other parsing logic.
+- Do NOT add new tables (no game_roster table in this task).
+- Do NOT attempt clock backfill or advanced linking beyond player_id/team_id/game_key.
+- Keep changes minimal and focused on shot_chart only.
+
+DELIVERABLE:
+- Provide the exact code changes (diff or full updated function blocks) and the SQL migration.

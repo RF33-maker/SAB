@@ -1,0 +1,204 @@
+stint with 9 players (expected 5) at action 730
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 8 players (start_action=676, end_action=735) — is_valid_lineup=False
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 8 players after sub flush at action 735
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 8 players (expected 5) at action 735
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 8 players (start_action=735, end_action=742) — is_valid_lineup=False
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 9 players after sub flush at action 742
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 9 players (expected 5) at action 742
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 9 players (start_action=742, end_action=754) — is_valid_lineup=False
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 8 players after sub flush at action 754
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 8 players (expected 5) at action 754
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: writing degraded stint with 9 players (start_action=730, end_action=785) — is_valid_lineup=False
+2026-04-22 13:58:29,476 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: lineup has 9 players after sub flush at action 785
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: opened stint with 9 players (expected 5) at action 785
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 8 players (start_action=754, end_action=787) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 8 players after sub flush at action 787
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 8 players (expected 5) at action 787
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: writing degraded stint with 9 players (start_action=785, end_action=800) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: opened stint with 9 players (expected 5) at action 800
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 8 players (start_action=787, end_action=800) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 8 players (expected 5) at action 800
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: writing degraded stint with 9 players (start_action=800, end_action=801) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: lineup has 9 players after sub flush at action 801
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: opened stint with 9 players (expected 5) at action 801
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 8 players (start_action=800, end_action=855) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: subout of unknown player 'S. Laditan-Adebiyi' (shirt=None)
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 9 players after sub flush at action 855
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 9 players (expected 5) at action 855
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 9 players (start_action=855, end_action=857) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 9 players after sub flush at action 857
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 9 players (expected 5) at action 857
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: writing degraded stint with 9 players (start_action=801, end_action=872) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: lineup has 9 players after sub flush at action 872
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: opened stint with 9 players (expected 5) at action 872
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 9 players (start_action=857, end_action=975) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 9 players after sub flush at action 975
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 9 players (expected 5) at action 975
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: writing degraded stint with 9 players (start_action=872, end_action=977) — is_valid_lineup=False
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: lineup has 9 players after sub flush at action 977
+2026-04-22 13:58:29,477 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: opened stint with 9 players (expected 5) at action 977
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 9 players (start_action=975, end_action=979) — is_valid_lineup=False
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 9 players after sub flush at action 979
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 9 players (expected 5) at action 979
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 9 players (start_action=979, end_action=1005) — is_valid_lineup=False
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 9 players after sub flush at action 1005
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 9 players (expected 5) at action 1005
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 9 players (start_action=1005, end_action=1022) — is_valid_lineup=False
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: lineup has 8 players after sub flush at action 1022
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: opened stint with 8 players (expected 5) at action 1022
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=66ac7a5f-0248-4d4b-877f-348e960605d2: writing degraded stint with 9 players (start_action=977, end_action=1052) — is_valid_lineup=False
+2026-04-22 13:58:29,478 WARNING lineup_builder: game=1SXIRZ3ALFXCL05C3G1G team=e70e31ab-905c-4bf3-baa6-97644ee39fcc: writing degraded stint with 8 players (start_action=1022, end_action=1052) — is_valid_lineup=False
+2026-04-22 13:58:29,478 INFO lineup_builder: game=1SXIRZ3ALFXCL05C3G1G: generated 46 lineup stints
+2026-04-22 13:58:29,478 INFO lineup_builder: game=1SXIRZ3ALFXCL05C3G1G: dry_run=True, skipping DB writes
+2026-04-22 13:58:29,478 INFO backfill_lineups: Processing game=1SXQTZAI4LQOAQAOHDR7
+2026-04-22 13:58:29,478 INFO lineup_builder: Starting lineup build for game=1SXQTZAI4LQOAQAOHDR7 (dry_run=True)
+2026-04-22 13:58:29,613 INFO httpx: HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/rest/v1/game_rosters?select=team_id%2Cteam_no%2Cplayer_name%2Cshirt_number%2Cpno%2Cstarter%2Cactive%2Cplayer_id&game_key=eq.1SXQTZAI4LQOAQAOHDR7 "HTTP/2 200 OK"
+2026-04-22 13:58:29,615 INFO lineup_builder: Loaded rosters for 2 teams in game 1SXQTZAI4LQOAQAOHDR7
+2026-04-22 13:58:29,794 INFO httpx: HTTP Request: GET https://omkwqpcgttrgvbhcxgqf.supabase.co/rest/v1/live_events?select=action_number%2Cperiod%2Cclock%2Cteam_id%2Cteam_no%2Cplayer_id%2Cplayer_name%2Cshirt_number%2Cpno%2Caction_type%2Csub_type%2Csuccess%2Cscoring%2Cscore%2Cteam_score%2Copp_score%2Cperiod_type&game_key=eq.1SXQTZAI4LQOAQAOHDR7&order=action_number.asc "HTTP/2 200 OK"
+2026-04-22 13:58:29,796 INFO lineup_builder: Loaded 501 events for game 1SXQTZAI4LQOAQAOHDR7
+2026-04-22 13:58:29,796 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: subout of unknown player 'V. Iweanya' (shirt=None)
+2026-04-22 13:58:29,796 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 6 players after sub flush at action 65
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 6 players (expected 5) at action 65
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 6 players (start_action=65, end_action=74) — is_valid_lineup=False
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: subout of unknown player 'L. Jepson' (shirt=None)
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 7 players after sub flush at action 74
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 7 players (expected 5) at action 74
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: subout of unknown player 'A. Shaw' (shirt=None)
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 6 players after sub flush at action 76
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 6 players (expected 5) at action 76
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 6 players (start_action=76, end_action=124) — is_valid_lineup=False
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: subout of unknown player 'J. Bakhsh' (shirt=None)
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 7 players after sub flush at action 124
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 7 players (expected 5) at action 124
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 7 players (start_action=74, end_action=130) — is_valid_lineup=False
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: subout of unknown player 'M. Jurca' (shirt=None)
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 8 players after sub flush at action 130
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 8 players (expected 5) at action 130
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 7 players (start_action=124, end_action=146) — is_valid_lineup=False
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 7 players after sub flush at action 146
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 7 players (expected 5) at action 146
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 7 players (start_action=146, end_action=167) — is_valid_lineup=False
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: subout of unknown player 'C. Ryan' (shirt=None)
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 8 players after sub flush at action 167
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 8 players (expected 5) at action 167
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 8 players (start_action=130, end_action=169) — is_valid_lineup=False
+2026-04-22 13:58:29,797 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: subout of unknown player 'C. Hinett' (shirt=None)
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 169
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 169
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=169, end_action=181) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 181
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 8 players (start_action=167, end_action=181) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 8 players (expected 5) at action 181
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 8 players (start_action=181, end_action=182) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: subout of unknown player 'L. Gibbins' (shirt=None)
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 182
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 182
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=182, end_action=203) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 203
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 203
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=181, end_action=207) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 207
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 207
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=207, end_action=220) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 220
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 220
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=203, end_action=231) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 231
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 231
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=220, end_action=238) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 238
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 238
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=231, end_action=268) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 268
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 268
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=238, end_action=272) — is_valid_lineup=False
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 272
+2026-04-22 13:58:29,798 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 272
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=268, end_action=304) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 304
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 304
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=272, end_action=306) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 306
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 306
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=306, end_action=308) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 308
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 308
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=308, end_action=319) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 319
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 319
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=319, end_action=348) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 348
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=304, end_action=348) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 348
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=348, end_action=351) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 351
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 351
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=348, end_action=355) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 355
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 355
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=355, end_action=392) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 392
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 392
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=351, end_action=411) — is_valid_lineup=False
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 411
+2026-04-22 13:58:29,799 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 411
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=392, end_action=413) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 413
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 413
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=413, end_action=424) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 424
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 424
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=411, end_action=452) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 452
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 452
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=452, end_action=466) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 466
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 466
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=424, end_action=468) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 468
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 468
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=466, end_action=488) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 488
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 488
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=468, end_action=492) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 492
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 492
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=492, end_action=509) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 509
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=488, end_action=509) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 509
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=509, end_action=510) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 510
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 510
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=509, end_action=539) — is_valid_lineup=False
+2026-04-22 13:58:29,800 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 539
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 539
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=510, end_action=566) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 566
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 566
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=539, end_action=570) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 570
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 570
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=566, end_action=592) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 592
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 592
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=592, end_action=632) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: lineup has 9 players after sub flush at action 632
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: opened stint with 9 players (expected 5) at action 632
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=570, end_action=636) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 636
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 636
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=636, end_action=662) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: lineup has 9 players after sub flush at action 662
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: opened stint with 9 players (expected 5) at action 662
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=01240dae-49da-4652-b4f5-0465f09080ec: writing degraded stint with 9 players (start_action=662, end_action=696) — is_valid_lineup=False
+2026-04-22 13:58:29,801 WARNING lineup_builder: game=1SXQTZAI4LQOAQAOHDR7 team=fdbfc357-7e06-404f-bf31-a2ae396d8e9b: writing degraded stint with 9 players (start_action=632, end_action=696) — is_valid_lineup=False
+2026-04-22 13:58:29,801 INFO lineup_builder: game=1SXQTZAI4LQOAQAOHDR7: generated 48 lineup stints
+2026-04-22 13:58:29,801 INFO lineup_builder: game=1SXQTZAI4LQOAQAOHDR7: dry_run=True, skipping DB writes
+
+============================================================
+Lineup backfill complete
+  Processed : 689
+  Skipped   : 99
+  Errors    : 0
+  Dry-run   : True

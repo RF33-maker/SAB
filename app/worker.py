@@ -118,6 +118,7 @@ def get_due_games():
             .gte("matchtime", window_start)
             .lte("matchtime", window_end)
             .lte("next_poll_at", now_iso)
+            .not_.is_("LiveStats URL", "null")
             .execute()
         )
         for g in result_a1.data or []:
@@ -133,6 +134,7 @@ def get_due_games():
             .gte("matchtime", window_start)
             .lte("matchtime", window_end)
             .is_("next_poll_at", "null")
+            .not_.is_("LiveStats URL", "null")
             .execute()
         )
         for g in result_a2.data or []:
@@ -147,6 +149,7 @@ def get_due_games():
             .eq("status", "final")
             .is_("parsed_at", "null")
             .lte("next_poll_at", now_iso)
+            .not_.is_("LiveStats URL", "null")
             .execute()
         )
         for g in result_b1.data or []:
@@ -161,6 +164,7 @@ def get_due_games():
             .eq("status", "final")
             .is_("parsed_at", "null")
             .is_("next_poll_at", "null")
+            .not_.is_("LiveStats URL", "null")
             .execute()
         )
         for g in result_b2.data or []:
@@ -358,9 +362,13 @@ def poll_game(game: dict):
     
     log.debug("Polling: %s (status: %s)", game_key, current_status)
     
+    if not livestats_url:
+        log.info("Skipping game %s: no LiveStats URL", game_key)
+        return
+
     numeric_id = extract_numeric_id(livestats_url)
     if not numeric_id:
-        log.warning("No numeric ID found in URL: %s", livestats_url)
+        log.info("Skipping game %s: no numeric ID found in URL: %s", game_key, livestats_url)
         return
     
     data_url = f"{LIVESTATS_BASE}/{numeric_id}/data.json"
