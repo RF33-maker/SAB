@@ -1,10 +1,13 @@
 import os
+import logging
 import requests
 import pandas as pd
 from io import BytesIO
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from app.utils.compute_advanced_stats import compute_advanced_stats
+
+log = logging.getLogger("json_parser")
 
 # ✅ Env variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -108,10 +111,25 @@ TEAM_FIELD_MAP = {
     "tot_sPointsFastBreak": "tot_spointsfastbreak",
     "tot_sBenchPoints": "tot_sbenchpoints",
     "tot_sPointsInThePaint": "tot_spointsinthepaint",
-    "tot_timeLeading": "tot_timeleading",
-    "tot_biggestScoringRun": "tot_biggestscoringrun",
-    "tot_leadChanges": "tot_leadchanges",
-    "tot_timesScoresLevel": "tot_timesscoreslevel",
+    "tot_sTimeLeading": "tot_timeleading",
+    "tot_sBiggestScoringRun": "tot_biggestscoringrun",
+    "tot_sLeadChanges": "tot_leadchanges",
+    "tot_sTimesScoresLevel": "tot_timesscoreslevel",
+    "tot_sBiggestLead": "tot_sbiggestlead",
+    "tot_sFoulsOn": "tot_sfoulson",
+    "tot_sFoulsTotal": "tot_sfoulstotal",
+    "tot_sFoulsTeam": "tot_sfoulsteam",
+    "tot_sReboundsTeam": "tot_sreboundsteam",
+    "tot_sReboundsTeamDefensive": "tot_sreboundsteamdefensive",
+    "tot_sReboundsTeamOffensive": "tot_sreboundsteamoffensive",
+    "tot_sTurnoversTeam": "tot_sturnovers_team",
+    "tot_eff_1": "tot_eff_1",
+    "tot_eff_2": "tot_eff_2",
+    "tot_eff_3": "tot_eff_3",
+    "tot_eff_4": "tot_eff_4",
+    "tot_eff_5": "tot_eff_5",
+    "tot_eff_6": "tot_eff_6",
+    "tot_eff_7": "tot_eff_7",
     "p1_score": "p1_score",
     "p2_score": "p2_score",
     "p3_score": "p3_score",
@@ -259,15 +277,42 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
 # ----------------------------
 # Entity Get-or-Create
 # ----------------------------
+def _slugify(text: str) -> str:
+    """Convert a league name to a URL-safe slug, e.g. 'WEABL 2025-26' → 'weabl-2025-26'."""
+    import re as _re
+    slug = text.lower().strip()
+    slug = _re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    return slug or "league"
+
+
 def get_or_create_league(name: str, user_id: str = None):
     res = ref_db.table("leagues").select("league_id").eq("name", name).execute()
     if res.data:
         return res.data[0]["league_id"]
-    insert_data = {"name": name}
+
+    slug = _slugify(name)
+    insert_data = {"name": name, "slug": slug}
     if user_id:
         insert_data["created_by"] = user_id
-    new = ref_db.table("leagues").insert(insert_data).execute()
-    return new.data[0]["league_id"]
+
+    try:
+        new = ref_db.table("leagues").insert(insert_data).execute()
+        return new.data[0]["league_id"]
+    except Exception as e:
+        # Slug collision (23505) — slug already taken. Try appending a short suffix.
+        err_str = str(e)
+        if "23505" in err_str or "duplicate key" in err_str.lower():
+            # Re-check by name first (race condition)
+            retry = ref_db.table("leagues").select("league_id").eq("name", name).execute()
+            if retry.data:
+                return retry.data[0]["league_id"]
+            # Try slug with numeric suffix
+            import uuid as _uuid
+            insert_data["slug"] = f"{slug}-{str(_uuid.uuid4())[:8]}"
+            fallback = ref_db.table("leagues").insert(insert_data).execute()
+            return fallback.data[0]["league_id"]
+        raise
 
 def get_or_create_team(league_id: str, name: str, user_id: str = None):
     normalized_name = normalize_team_name(name)
@@ -385,6 +430,23 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
     teams = data.get("tm", {})
 
+    # --- Update game_schedule with attendance and officials if present ---
+    _sched_extra = {}
+    _attendance = data.get("attendance")
+    _officials = data.get("officials")
+    if _attendance is not None:
+        try:
+            _sched_extra["attendance"] = int(_attendance)
+        except (TypeError, ValueError):
+            pass
+    if _officials:
+        _sched_extra["officials"] = _officials
+    if _sched_extra:
+        try:
+            game_db.table("game_schedule").update(_sched_extra).eq("game_key", game_key).execute()
+        except Exception as _e:
+            print(f"⚠️  Could not update game_schedule with attendance/officials: {_e}")
+
     # --- Insert team stats ---
     team_records = []
     for side, team in teams.items():
@@ -396,16 +458,21 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             "game_key": game_key,
             "team_id": team_id,
             "league_id": league_id,
+            "source_type": "json",
             "identifier_duplicate": f"{numeric_id}_{team_id}_{side}"
         }
         for json_key, db_key in TEAM_FIELD_MAP.items():
             team_record[db_key] = team.get(json_key)
+        lds = team.get("lds")
+        if lds:
+            team_record["game_leaders_json"] = lds
         team_records.append(team_record)
 
     insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")
 
-    # --- Insert player stats ---
+    # --- Insert player stats (build roster_map for shot linking) ---
     player_records = []
+    roster_map = {}  # (side, pno_int) -> player_id
     try:
         for side, team in teams.items():
             team_id = get_or_create_team(league_id, team.get("name"), user_id)
@@ -414,6 +481,12 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 try:
                     full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
                     player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), team_name, league_id, user_id)
+
+                    # Build roster_map for shot linking: pno from roster is the dict key (pid)
+                    try:
+                        roster_map[(side, int(pid))] = player_id
+                    except (ValueError, TypeError):
+                        pass
 
                     player_record = {
                         "numeric_id": numeric_id,
@@ -431,35 +504,100 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     player_records.append(player_record)
                 except Exception as e:
                     player_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip() or f"Player {pid}"
-                    print(f"⚠️  Failed to process player {player_name}: {e}")
+                    log.warning("Failed to process player %s: %s", player_name, e)
                     continue
 
-        print(f"📊 Prepared {len(player_records)} player records for game {numeric_id}")
+        log.info("Prepared %d player records for game %s", len(player_records), numeric_id)
         insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
     except Exception as e:
-        print(f"❌ Failed to process player stats for game {numeric_id}: {e}")
-        import traceback
-        traceback.print_exc()
+        log.error("Failed to process player stats for game %s: %s", numeric_id, e, exc_info=True)
 
-    # --- Insert shots ---
-    shots = data.get("shot", [])
+    # --- Build and upsert game_rosters ---
+    try:
+        roster_records = []
+        for side, team in teams.items():
+            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            for pid, player in team.get("pl", {}).items():
+                full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
+                shirt = player.get("shirtNumber")
+
+                # Resolve player_id from already-built roster_map or try lookup
+                try:
+                    _pno_int = int(pid)
+                except (ValueError, TypeError):
+                    _pno_int = None
+                resolved_pid = roster_map.get((side, _pno_int))
+
+                roster_records.append({
+                    "game_key": game_key,
+                    "league_id": league_id,
+                    "team_id": team_id,
+                    "team_no": side,
+                    "player_name": full_name,
+                    "shirt_number": str(shirt) if shirt is not None else None,
+                    "pno": _pno_int,
+                    "starter": bool(player.get("starter")),
+                    "active": bool(player.get("active", True)),
+                    "player_id": resolved_pid,
+                })
+
+        if roster_records:
+            game_db.table("game_rosters").upsert(
+                roster_records,
+                on_conflict="game_key,team_id,shirt_number",
+            ).execute()
+            print(f"✅ Upserted {len(roster_records)} game_rosters rows for {game_key}")
+    except Exception as e:
+        log.warning("Failed to upsert game_rosters for game %s: %s", numeric_id, e)
+
+    # --- Insert shot chart (reads per-team shots from tm[side]["shot"]) ---
+    # Build PBP clock map: actionNumber -> clock string (shots have no clock field)
+    pbp_clock_map = {}
+    for event in data.get("pbp", []):
+        an = event.get("actionNumber")
+        cl = event.get("clock")
+        if an is not None and cl:
+            pbp_clock_map[an] = cl
+
     shot_records = []
-    for s in shots:
-        team_name = teams.get(s.get("tno"), {}).get("name", "Unknown")
-        team_id = get_or_create_team(league_id, team_name, user_id)
-        player_id = get_or_create_player(s.get("player"), team_id, s.get("shirtNumber"), team_name, league_id, user_id)
-        shot_record = {
-            "numeric_id": numeric_id,
-            "game_id": numeric_id,
-            "team_id": team_id,
-            "player_id": player_id,
-            "identifier_duplicate": f"{numeric_id}_{s.get('actionnumber')}_{player_id}"
-        }
-        for json_key, db_key in SHOT_FIELD_MAP.items():
-            shot_record[db_key] = s.get(json_key)
-        shot_records.append(shot_record)
+    try:
+        for side, team in teams.items():
+            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            team_shots = team.get("shot") or []
+            log.debug("Side %s: %d shots found", side, len(team_shots))
+            for s in team_shots:
+                action_number = s.get("actionNumber")
+                if action_number is None:
+                    continue  # cannot dedupe without action_number
+                pno_raw = s.get("pno")
+                try:
+                    pno = int(pno_raw) if pno_raw is not None else None
+                except (ValueError, TypeError):
+                    pno = None
+                linked_player_id = roster_map.get((side, pno)) if pno is not None else None
+                record = {
+                    "league_id": league_id,
+                    "game_key": game_key,
+                    "team_id": team_id,
+                    "player_id": linked_player_id,
+                    "player_name": s.get("player"),
+                    "team_no": s.get("tno"),
+                    "period": s.get("per"),
+                    "shot_type": s.get("actionType"),
+                    "sub_type": s.get("subType"),
+                    "success": s.get("r") == 1,
+                    "x": s.get("x"),
+                    "y": s.get("y"),
+                    "action_number": action_number,
+                    "clock": pbp_clock_map.get(action_number),
+                }
+                shot_records.append(record)
 
-    insert_supabase("shots", shot_records, conflict_keys="identifier_duplicate")
+        log.info("Prepared %d shot records for game %s", len(shot_records), numeric_id)
+        if shot_records:
+            insert_supabase("shot_chart", shot_records, conflict_keys="game_key,action_number")
+    except Exception as e:
+        log.error("Failed to process shot chart for game %s: %s", numeric_id, e, exc_info=True)
 
     # --- Incremental play-by-play insertion ---
     # Query the latest action_number for this game to only insert new events
@@ -504,8 +642,28 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             s2 = e.get("s2", "")
             score = f"{s1}-{s2}" if s1 and s2 else None
 
+            # team_score / opp_score: s1 is team-1 score, s2 is team-2 score
+            try:
+                _s1_int = int(s1) if s1 != "" else None
+                _s2_int = int(s2) if s2 != "" else None
+            except (ValueError, TypeError):
+                _s1_int = _s2_int = None
+            if tno == 1 or str(tno) == "1":
+                _team_score, _opp_score = _s1_int, _s2_int
+            elif tno == 2 or str(tno) == "2":
+                _team_score, _opp_score = _s2_int, _s1_int
+            else:
+                _team_score, _opp_score = None, None
+
             # Keep qualifiers as array
             qualifiers = e.get("qualifier", [])
+
+            # pno: raw numeric player roster key from the API
+            _pno = e.get("pno")
+            try:
+                _pno = int(_pno) if _pno is not None else None
+            except (ValueError, TypeError):
+                _pno = None
 
             pbp_record = {
                 "league_id": league_id,
@@ -527,6 +685,12 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 "x_coord": None,
                 "y_coord": None,
                 "description": None,
+                "shirt_number": str(e.get("shirtNumber")) if e.get("shirtNumber") is not None else None,
+                "pno": _pno,
+                "period_type": e.get("periodType"),
+                "previous_action": e.get("previousAction"),
+                "team_score": _team_score,
+                "opp_score": _opp_score,
             }
             pbp_records.append(pbp_record)
 
@@ -551,6 +715,14 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             print(f"✅ Inserted {inserted_count} new play-by-play events into live_events")
     except Exception as e:
         print(f"⚠️  Error in play-by-play processing: {e}")
+
+    # --- Build lineup stints ---
+    # Only run if roster and PBP data are present; log a warning rather than failing.
+    try:
+        from app.utils.lineup_builder import build_lineups_for_game
+        build_lineups_for_game(game_key=game_key, league_id=league_id)
+    except Exception as e:
+        log.warning("Lineup builder failed for game %s (non-fatal): %s", game_key, e)
 
 # ----------------------------
 # Change Detection Helper

@@ -16,10 +16,32 @@ Key API endpoints include `/api/parse` for file uploads, `/start` and `/reset` f
 
 ### Data Processing Pipeline
 
--   **PDF Parsing**: Utilizes PDFPlumber and PyMuPDF to extract game metadata and player statistics from various PDF box score formats using complex regex patterns.
+-   **PDF Parsing (Genius Sports post-game PDFs)**: A dedicated ingestion pipeline in `app/utils/pdf_parser.py` handles Genius Sports / FIBA post-game PDF exports produced at Richards Elite and similar events where live JSON stats are unavailable. The pipeline auto-detects report type from the first-page header and routes to sub-parsers:
+    -   **box_score**: Extracts per-player stats (24-column regex, EF column optional), team totals, and footer stats (paint points, bench points, turnovers, fast-break, etc.) → writes to `player_stats` and `team_stats` (public schema).
+    -   **pbp** (play-by-play): Uses layout-based column detection (`COL_SPLIT=46`; "letters in left chunk → entire line is home event") to correctly attribute events. Orphan-buffering handles the FIBA layout pattern where action text precedes its clock on the page. Merger is player-number-aware (won't merge distinct events sharing a clock). Extracts `player_name`, `team_no`, `sub_type`, `qualifiers`, `success`, `scoring` per event. Starters regex handles alphanumeric/mixed-case abbreviations (TM1, TM2, one, thr). → writes to `live_events` (public schema).
+    -   **lineup**: Parses Lineup Analysis tables with multi-line lineup text and per-row stat columns → writes to `lineup_stats` (public schema). Team section detection anchored to metadata-derived team names via `_is_known_team_header`.
+    -   **plus_minus**: Extracts per-player plus/minus summary (mins on/off, pts diff on/off) → writes to `player_plus_minus` (public schema). `identifier_duplicate` keyed on `game_key + player_id`. Team detection anchored to metadata.
+    -   **rotations**: Parses multi-line Rotations Summary blocks (lineup header + stat row) → writes to `rotations_summary` (public schema). Team detection anchored to metadata.
+    -   **shot_chart / shot_areas**: Correctly detected and skipped (image-only PDFs, no extractable data).
+    -   Team linkage: `_resolve_team_from_meta(meta, league_id)` pre-resolves home/away IDs from PDF header; `_is_known_team_header(line, known_names)` matches section headers exactly — no fragile text heuristics.
+    -   game_key defaults to `PDF_{game_no}` from the PDF header. All writes target `public` schema.
+    -   Exposed via the `/api/parse-pdf` endpoint (POST, multipart/form-data: `file`, `league_name`, optional `game_key`/`user_id`).
+-   **Legacy parser.py**: Marked deprecated; all PDF ingestion now uses `pdf_parser.py`.
+-   **PDF schema additions** (`migrations/pdf_tables.sql`): 15 new `team_stats` columns (paint pts, bench pts, turnovers, fast-break, etc.), attendance/officials on `game_schedule`, and 3 new tables: `lineup_stats`, `player_plus_minus`, `rotations_summary`.
+-   **JSON Parser fixes** (`json_parser.py`): Fixed 4 wrong TEAM_FIELD_MAP keys (`tot_sTimeLeading`, `tot_sBiggestScoringRun`, `tot_sLeadChanges`, `tot_sTimesScoresLevel`), added 1 missing key (`tot_sBiggestLead`), added 7 unmapped fields, updated `lds`→`game_leaders_json`, `source_type` tag, and attendance/officials upsert from JSON.
+-   **Legacy PDF Parsing**: Utilizes PDFPlumber and PyMuPDF to extract game metadata and player statistics from various PDF box score formats using complex regex patterns.
 -   **Excel Parsing (Bulk Import)**: Employs Pandas for structured data processing, featuring a field mapping system for standardization and optional "Pool" column support. It prioritizes schedule-first processing, adding games to `game_schedule` before fetching LiveStats. Smart change detection skips unchanged games on repeat uploads, significantly reducing database calls.
 -   **Live Game Parser (Real-time)**: A continuous polling system (`app/live_parser.py`) processes live games from `game_schedule` data.json URLs. It extracts comprehensive game data (team stats, player stats, plays, shots), normalizes player/team names, and syncs data to `team_stats`, `player_stats`, `live_events`, and `shot_chart`. A status field system (`live` vs. `final`) manages data integrity and optimizes performance by excluding finalized games from polling.
 -   **Play-by-Play Backfill System**: Backfills historical play-by-play data from FIBA LiveStats JSON into the `live_events` table, including an optimized fuzzy player matching system and team name normalization.
+-   **Lineup Analytics Pipeline**: A full 5-man lineup tracking and on/off analytics pipeline built on top of the PBP infrastructure:
+    -   `live_events` extended with `shirt_number`, `pno`, `period_type`, `previous_action`, `team_score`, `opp_score` for lineup reconstruction.
+    -   `game_rosters` table populated during game parsing (one row per player per game, includes starter flag).
+    -   `lineup_stints` table stores each continuous 5-man lineup period per team with full stat attribution (points for/against, FG/FT, rebounds, assists, turnovers, fouls, steals, blocks, possession stubs).
+    -   `player_on_court_stints` table expands each stint into one row per player for on/off analysis.
+    -   `app/utils/lineup_builder.py`: standalone module that reconstructs lineups from raw PBP, handles substitution pairing, period boundaries, and missing-player edge cases with detailed logging. Deterministic `lineup_key` built from sorted player UUIDs (fallback to name+shirt tokens when IDs unavailable).
+    -   `app/backfill_lineups.py`: backfill script with `--dry-run`, `--game-key`, `--league-id`, and `--force` flags.
+    -   SQL migration: `migrations/lineup_pipeline.sql` (ALTER live_events + CREATE game_rosters/lineup_stints/player_on_court_stints for both public and test schemas).
+    -   SQL views: `lineup_summary` (lineup aggregates with rating stubs) and `player_on_off_summary` (player on-court aggregates with rating stubs) added to `supabase/views.sql`.
 -   **Deduplication System**: Handles team name variations and gender markers through alias mapping and strips gender indicators. Player fuzzy matching (85% similarity threshold) prevents duplicate player records within the same team. Maintenance scripts (`cleanup_duplicate_teams.py`, `cleanup_duplicate_players.py`) are available for merging existing duplicates.
 
 ### Data Storage

@@ -1,0 +1,131 @@
+I need you to help me revive and update an old PDF-based basketball stats parser in my existing codebase.
+
+Context:
+A long time ago, I used uploaded FIBA/Genius-style LiveStats PDF box score files to capture game data for my site. That old workflow worked before, but my system has evolved a lot since then. I now capture much more data through my JSON parser, and my database / downstream pipeline expects a richer and more structured format than the old PDF parser likely outputs.
+
+A new opportunity has come up with Richards Elite. Genius Sports has removed live stats links for self-hosted events unless they pay a large fee, but they can still export official post-game PDFs. I want to use that PDF export as a fallback workflow for localised events and get this working again quickly.
+
+Important:
+- There is already an easy upload place in the system, so upload is NOT the issue.
+- The main issue is that the old PDF parser is likely out of sync with the current schema and will probably break if used now.
+- Once the parser is fixed and aligned properly, the rest of the features should fall into place.
+- Play-by-play may also be available in the PDF export according to the stats operator I spoke to.
+- Shot chart might also be possible, but that is NOT essential right now and should not delay the core fix.
+
+Primary goal:
+Get the PDF parser working again and aligned to the current data pipeline so this works reliably:
+
+upload PDF → parse successfully → save usable game/player/team data → no pipeline break
+
+This is the priority over the next few days.
+
+What I need from you:
+1. Inspect the existing old PDF parser code and identify where it breaks against the current system.
+2. Compare the old PDF parser output shape to the current JSON parser output shape.
+3. Identify:
+   - which fields the current system expects
+   - which of those fields a PDF can provide
+   - which should be optional / null-safe
+   - which are impossible from PDF and need graceful handling
+4. Create a clear normalization/mapping layer so the PDF parser outputs data in the current canonical structure expected by the database and downstream logic.
+5. Update the parser and related insert/upsert logic so PDF-derived games can be ingested safely.
+6. Test with a real PDF end-to-end.
+
+Scope and priorities:
+Highest priority:
+- game metadata
+- player box score data
+- team totals
+- structured numeric makes/attempts fields
+- reliable DB insert/upsert
+- source-aware handling so PDF games do not break richer JSON-dependent logic
+
+Secondary priority:
+- play-by-play extraction if the PDF has a clean text-based play-by-play table
+
+Low priority / ignore for now:
+- shot chart extraction unless it is very easy
+- anything image-based
+- extra polish
+- advanced feature expansion
+
+Expected PDF-supported data:
+Game-level:
+- competition name if present
+- game date
+- home team
+- away team
+- final score
+- venue if present
+- source_type = "pdf"
+
+Player-level:
+- player name
+- team name
+- team side if available
+- jersey number if available
+- minutes
+- points
+- rebounds
+- assists
+- steals
+- blocks
+- turnovers
+- fouls
+- FGM/FGA
+- 2PM/2PA if available
+- 3PM/3PA
+- FTM/FTA
+
+Team-level:
+- team totals for the same core stats above
+
+Important implementation guidance:
+- Do NOT treat the PDF parser like a one-off hack.
+- Treat it as another ingestion source that must map into the same canonical schema as the JSON parser.
+- Separate the work into:
+  A. PDF extraction layer
+  B. normalization/mapping layer
+  C. persistence layer
+- Add safe defaults / null handling for fields only available from JSON.
+- Explicitly mark source_type = "pdf"
+- If needed, mark things like play_by_play_available / shot_chart_available clearly instead of faking missing data.
+- Do not let unsupported fields crash the pipeline.
+
+Likely issues to investigate:
+- old parser field names no longer match current expected keys
+- current DB insert functions may assume richer JSON payloads
+- validation may fail when PDF-only data is missing some JSON fields
+- team/player mapping may need to be tightened
+- percentage stats may need recalculating from makes/attempts rather than trusting PDF text
+- downstream features may need graceful degradation for PDF-sourced games
+
+Execution plan:
+Phase 1:
+- Find the old PDF parser and related functions/files
+- Run it against a current sample PDF
+- Identify exact failure points
+- Produce a field mapping: old PDF output vs current JSON/canonical structure
+
+Phase 2:
+- Update extraction and normalization
+- Align output keys to the current schema
+- Add null-safe/default handling for unavailable fields
+- Get one PDF ingesting end-to-end successfully
+
+Phase 3:
+- Test multiple PDFs from the same export style
+- Fix edge cases
+- Then inspect whether play-by-play can also be parsed cleanly
+
+Success criteria:
+- A Richards Elite PDF can be uploaded and processed without breaking the system
+- Game, player, and team data are stored correctly
+- The output is aligned enough with the current pipeline that downstream features can work or degrade safely
+- No time wasted on non-essential extras until the parser is stable
+
+What I want from you first:
+1. Find the relevant files/functions for the current JSON parser, old PDF parser, and DB insert/upsert logic
+2. Summarise the current architecture and where the mismatch likely is
+3. Propose the exact changes needed before making them
+4. Then implement the fixes in a clean, maintainable way

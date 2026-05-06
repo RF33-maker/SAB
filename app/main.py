@@ -2,6 +2,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from app.routes.parse import parse_bp
 from app.routes.chart import chart_bp
+from app.routes.lineups import lineups_bp
+from app.routes.admin import admin_bp
 from app.utils.json_parser import run_from_excel
 import os
 import logging
@@ -24,6 +26,8 @@ CORS(flask_app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 flask_app.register_blueprint(parse_bp)
 flask_app.register_blueprint(chart_bp)
+flask_app.register_blueprint(lineups_bp)
+flask_app.register_blueprint(admin_bp)
 
 if ENABLE_OPENAI:
     from app.routes.query import query_bp
