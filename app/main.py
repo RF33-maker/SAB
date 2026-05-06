@@ -22,7 +22,23 @@ log.warning("Swish Assistant is live.")
 ENABLE_OPENAI = os.environ.get("ENABLE_OPENAI", "false").lower() == "true"
 
 flask_app = Flask(__name__)
-CORS(flask_app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+ALLOWED_ORIGINS = [
+    "https://swishassistant.com",
+    "https://www.swishassistant.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
+CORS(
+    flask_app,
+    resources={r"/api/*": {"origins": ALLOWED_ORIGINS}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    expose_headers=["Content-Type"],
+    max_age=600,
+)
 
 flask_app.register_blueprint(parse_bp)
 flask_app.register_blueprint(chart_bp)
@@ -45,13 +61,19 @@ else:
     @flask_app.route('/api/ai-analysis', methods=['POST', 'OPTIONS'])
     def ai_not_enabled():
         if request.method == 'OPTIONS':
+            origin = request.headers.get('Origin', '')
             resp = flask_app.make_default_options_response()
-            resp.headers['Access-Control-Allow-Origin'] = 'https://swishassistant.com'
+            if origin in ALLOWED_ORIGINS:
+                resp.headers['Access-Control-Allow-Origin'] = origin
             resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
             resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
             return resp, 204
+        origin = request.headers.get('Origin', '')
         resp = jsonify({"error": "AI features not enabled"})
-        resp.headers['Access-Control-Allow-Origin'] = 'https://swishassistant.com'
+        if origin in ALLOWED_ORIGINS:
+            resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
         return resp, 501
 
 @flask_app.route('/')
