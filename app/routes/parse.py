@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app.utils.chat_data import supabase
 from app.utils.json_parser import run_from_excel
+from app.utils.pdf_parser import parse_pdf
 from app.utils.advanced_team_stats import compute_team_advanced, fetch_team_stats_for_league
 import traceback
 import logging
@@ -84,13 +85,13 @@ def handle_parse():
         try:
             bucket, filename = file_path.split("/", 1)
             file_bytes = supabase.storage.from_(bucket).download(filename)
-        except Exception:
-            pass  # fall through to run_from_excel which handles local paths too
+        except Exception as download_err:
+            log.warning("Supabase storage download failed for %s: %s", file_path, download_err)
+            return jsonify({"error": f"Storage download failed: {str(download_err)}"}), 500
 
         if file_bytes and file_bytes[:4] == b"%PDF":
             log.info("PDF detected in /api/parse — routing to PDF parser: %s", file_path)
-            from app.utils.pdf_parser import parse_pdf
-            import io
+            log.info("Using pdf_parser.py for /api/parse")
             result = parse_pdf(
                 pdf_file=io.BytesIO(file_bytes),
                 league_name=league_name or "Unknown",
