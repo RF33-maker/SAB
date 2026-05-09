@@ -35,9 +35,13 @@ CORS(
     resources={r"/api/*": {"origins": ALLOWED_ORIGINS}},
     supports_credentials=True,
     allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     expose_headers=["Content-Type"],
     max_age=600,
+)
+log.warning(
+    "CORS configured for flask_app (/api/*) — allowed origins: %s",
+    ", ".join(ALLOWED_ORIGINS),
 )
 
 flask_app.register_blueprint(parse_bp)
