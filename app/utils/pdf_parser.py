@@ -154,6 +154,61 @@ def _insert_batch(table: str, records: list, chunk_size: int = 200) -> int:
     raise RuntimeError(f"_insert_batch: too many retries for public.{table}")
 
 
+def _parse_competition_components(competition: str) -> dict:
+    """
+    Split a Genius Sports competition string into structured components.
+
+    Examples
+    --------
+    "REBA Summer League 14U Stop 3 FIBA"
+        → parent_league="REBA Summer League FIBA", age_group="14U", round_name="Stop 3"
+    "WEABL 2025-26 Round 12"
+        → parent_league="WEABL 2025-26", age_group=None, round_name="Round 12"
+    "NBL1 U18 Women"
+        → parent_league="NBL1 Women", age_group="U18", round_name=None
+    """
+    text = competition.strip()
+    age_group = None
+    round_name = None
+
+    # --- Age group (U14 / 14U style) ---
+    age_pats = [
+        r'\b(U\d{1,2}[WwMm]?)\b',   # U14, U16W, U18M
+        r'\b(\d{1,2}U\+?)\b',        # 14U, 16U+
+    ]
+    for pat in age_pats:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            age_group = m.group(1).upper()
+            text = text[: m.start()] + text[m.end():]
+            break
+
+    # --- Round / stop / week ---
+    round_pats = [
+        r'\b(Stop\s+\d+)\b',
+        r'\b(Round\s+\d+)\b',
+        r'\b(Week\s+\d+)\b',
+        r'\b(Stage\s+\d+)\b',
+        r'\b(Phase\s+\d+)\b',
+        r'\b(Game\s+\d+)\b',
+        r'\b(Match\s+\d+)\b',
+        r'\b(Finals?|Playoffs?|Semifinals?|Quarterfinals?)\b',
+    ]
+    for pat in round_pats:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            round_name = " ".join(w.capitalize() for w in m.group(1).split())
+            text = text[: m.start()] + text[m.end():]
+            break
+
+    parent_league = re.sub(r"\s{2,}", " ", text).strip().strip("-").strip()
+    return {
+        "parent_league": parent_league or competition.strip(),
+        "age_group": age_group,
+        "round_name": round_name,
+    }
+
+
 def _ensure_game_schedule_stub(game_key: str, meta: dict, league_id: str) -> None:
     """
     Insert a minimal game_schedule row so FK constraints on player_stats /
@@ -174,6 +229,8 @@ def _ensure_game_schedule_stub(game_key: str, meta: dict, league_id: str) -> Non
         "awayteam": meta.get("away_team_full", ""),
         "home_score": meta.get("home_score"),
         "away_score": meta.get("away_score"),
+        "age_group": meta.get("age_group"),
+        "round_name": meta.get("round_name"),
     }
     if meta.get("game_date"):
         stub["matchtime"] = meta["game_date"]
@@ -553,6 +610,13 @@ def _parse_header(first_page_text: str) -> dict:
                 abbrs.append(_m.group(2))
     meta["home_abbr"] = abbrs[0] if len(abbrs) > 0 else "HOME"
     meta["away_abbr"] = abbrs[1] if len(abbrs) > 1 else "AWAY"
+
+    # Parse competition into components (parent league, age group, round)
+    comp = meta.get("competition") or ""
+    components = _parse_competition_components(comp)
+    meta["parent_league"] = components["parent_league"]
+    meta["age_group"] = components["age_group"]
+    meta["round_name"] = components["round_name"]
 
     return meta
 
@@ -1867,4 +1931,42 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
 
     except Exception as e:
         log.error("PDF parse error: %s", e, exc_info=True)
+        return {"error": str(e)}
+
+
+def parse_pdf_header_only(pdf_file) -> dict:
+    """
+    Extract metadata from a Genius Sports PDF without writing anything to the DB.
+
+    Returns a dict with:
+      report_type, game_key, game_no, game_date, competition,
+      parent_league, age_group, round_name,
+      home_team, away_team, home_score, away_score, venue
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return {"error": "Missing Supabase credentials"}
+    try:
+        with pdfplumber.open(pdf_file) as pdf:
+            if not pdf.pages:
+                return {"error": "PDF has no pages"}
+            first_page_text = pdf.pages[0].extract_text() or ""
+            report_type = _detect_report_type(first_page_text)
+            meta = _parse_header(first_page_text)
+            return {
+                "report_type": report_type,
+                "game_key": meta.get("game_key"),
+                "game_no": meta.get("game_no"),
+                "game_date": meta.get("game_date"),
+                "competition": meta.get("competition"),
+                "parent_league": meta.get("parent_league"),
+                "age_group": meta.get("age_group"),
+                "round_name": meta.get("round_name"),
+                "home_team": meta.get("home_team_full"),
+                "away_team": meta.get("away_team_full"),
+                "home_score": meta.get("home_score"),
+                "away_score": meta.get("away_score"),
+                "venue": meta.get("venue"),
+            }
+    except Exception as e:
+        log.error("parse_pdf_header_only error: %s", e, exc_info=True)
         return {"error": str(e)}
