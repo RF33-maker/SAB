@@ -5,12 +5,13 @@ backfill_lineup_context_existing.py
 Backfill lineup_stints_context_v1 for an existing league by processing one
 game at a time to avoid timeouts on large datasets (10k+ stints).
 
+Uses the Supabase REST client (SUPABASE_URL + SUPABASE_KEY) — no direct
+Postgres connection required.
+
 Uses a tracking table (lineup_context_backfill_status) to record progress
 and allow safe resumption after failures.
 
-lineup_stints_context_v1 is assumed to already exist.  This script only
-inserts rows into it and creates the four supporting indexes (IF NOT EXISTS).
-It does NOT drop or recreate the table.
+lineup_stints_context_v1 must already exist in Supabase before running.
 
 Usage examples:
 
@@ -31,10 +32,7 @@ import argparse
 import logging
 import os
 import sys
-import textwrap
-
-import psycopg2
-import psycopg2.extras
+from collections import defaultdict
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,634 +40,367 @@ logging.basicConfig(
 )
 log = logging.getLogger("backfill_lineup_context")
 
-# Prefer SUPABASE_DB_URL (direct Postgres URL for the Supabase project).
-# Falls back to DATABASE_URL for local dev / CI.
-# Set SUPABASE_DB_URL in Replit Secrets:
-#   postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
-# (Supabase Dashboard → Settings → Database → Connection string → URI)
-DATABASE_URL = (
-    os.getenv("SUPABASE_DATABASE_URL")
-    or os.getenv("SUPABASE_DB_URL")
-    or os.getenv("DATABASE_URL")
-)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ---------------------------------------------------------------------------
-# Database connection
+# Supabase client
 # ---------------------------------------------------------------------------
 
-def get_conn():
-    """Open a psycopg2 connection using SUPABASE_DB_URL or DATABASE_URL."""
-    if not DATABASE_URL:
-        log.error(
-            "No database URL found. Set SUPABASE_DB_URL in Replit Secrets.\n"
-            "  Supabase Dashboard → Settings → Database → Connection string → URI\n"
-            "  Format: postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
-        )
+def get_db():
+    from supabase import create_client
+    from supabase.lib.client_options import ClientOptions
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        log.error("SUPABASE_URL and SUPABASE_KEY must be set.")
         sys.exit(1)
-    return psycopg2.connect(DATABASE_URL)
+    return create_client(SUPABASE_URL, SUPABASE_KEY,
+                         options=ClientOptions(schema="public"))
 
 
 # ---------------------------------------------------------------------------
-# DDL: tracking table + indexes on context table
-# (lineup_stints_context_v1 itself is NOT created here — it already exists)
+# Tracking table helpers
 # ---------------------------------------------------------------------------
 
-DDL_TRACKING_TABLE = """
-CREATE TABLE IF NOT EXISTS lineup_context_backfill_status (
-    game_key        text        NOT NULL,
-    league_id       uuid        NOT NULL,
-    status          text        NOT NULL DEFAULT 'pending',
-    stint_count     integer     NOT NULL DEFAULT 0,
-    inserted_rows   integer,
-    error_msg       text,
-    updated_at      timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (game_key, league_id)
-);
-"""
-
-# Four indexes on lineup_stints_context_v1.
-# 1. Per-game lookups and deletes.
-# 2. League + team analytics.
-# 3. Lineup-key aggregation queries.
-# 4. Composite flag filter: lets the planner push all four filter predicates
-#    into a single index scan (e.g. WHERE is_competitive_stint = true AND
-#    is_valid_lineup = true AND is_garbage_time = false ...).
-DDL_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS lscv1_game_key_idx"
-    "  ON lineup_stints_context_v1 (game_key);",
-
-    "CREATE INDEX IF NOT EXISTS lscv1_league_team_idx"
-    "  ON lineup_stints_context_v1 (league_id, team_id);",
-
-    "CREATE INDEX IF NOT EXISTS lscv1_lineup_player_ids_gin_idx"
-    "  ON lineup_stints_context_v1 USING GIN (lineup_player_ids);",
-
-    "CREATE INDEX IF NOT EXISTS lscv1_flags_idx"
-    "  ON lineup_stints_context_v1"
-    "  (is_valid_lineup, is_garbage_time, is_short_clock_end_period, is_competitive_stint);",
-]
-
-
-def ensure_schema(conn):
+def ensure_tracking_rows(db, league_id: str):
     """
-    Create the tracking table if absent, then create the four supporting
-    indexes on lineup_stints_context_v1 (IF NOT EXISTS — safe to re-run).
+    Discover all game_keys in lineup_stints for the league and insert
+    'pending' tracking rows for any that don't have one yet.
     """
-    with conn.cursor() as cur:
-        cur.execute(DDL_TRACKING_TABLE)
-        for idx_sql in DDL_INDEXES:
-            cur.execute(idx_sql)
-    conn.commit()
-    log.info("Tracking table and indexes ensured.")
+    page, page_size = 0, 1000
+    all_game_keys = set()
+    while True:
+        res = (db.table("lineup_stints")
+               .select("game_key")
+               .eq("league_id", league_id)
+               .range(page * page_size, (page + 1) * page_size - 1)
+               .execute())
+        batch = res.data or []
+        for r in batch:
+            all_game_keys.add(r["game_key"])
+        if len(batch) < page_size:
+            break
+        page += 1
+
+    if not all_game_keys:
+        log.info("No lineup_stints found for league %s", league_id)
+        return 0
+
+    # Fetch existing tracking rows
+    existing = set()
+    page = 0
+    while True:
+        res = (db.table("lineup_context_backfill_status")
+               .select("game_key")
+               .eq("league_id", league_id)
+               .range(page * page_size, (page + 1) * page_size - 1)
+               .execute())
+        batch = res.data or []
+        for r in batch:
+            existing.add(r["game_key"])
+        if len(batch) < page_size:
+            break
+        page += 1
+
+    new_keys = all_game_keys - existing
+    if new_keys:
+        rows = [{"game_key": gk, "league_id": league_id, "status": "pending"}
+                for gk in new_keys]
+        # Insert in chunks of 200
+        for i in range(0, len(rows), 200):
+            db.table("lineup_context_backfill_status").insert(rows[i:i+200]).execute()
+        log.info("Inserted %d new tracking rows", len(new_keys))
+
+    return len(all_game_keys)
+
+
+def get_pending_games(db, league_id: str, limit: int = None) -> list:
+    """Return pending game_keys ordered by game_key (proxy for size)."""
+    q = (db.table("lineup_context_backfill_status")
+         .select("game_key")
+         .eq("league_id", league_id)
+         .eq("status", "pending")
+         .order("game_key"))
+    if limit:
+        q = q.limit(limit)
+    res = q.execute()
+    return [r["game_key"] for r in (res.data or [])]
+
+
+def mark_running(db, league_id: str, game_key: str):
+    (db.table("lineup_context_backfill_status")
+     .update({"status": "running"})
+     .eq("league_id", league_id)
+     .eq("game_key", game_key)
+     .execute())
+
+
+def mark_complete(db, league_id: str, game_key: str, inserted: int):
+    (db.table("lineup_context_backfill_status")
+     .update({"status": "complete", "inserted_rows": inserted})
+     .eq("league_id", league_id)
+     .eq("game_key", game_key)
+     .execute())
+
+
+def mark_failed(db, league_id: str, game_key: str, error: str):
+    (db.table("lineup_context_backfill_status")
+     .update({"status": "failed", "error_msg": error[:500]})
+     .eq("league_id", league_id)
+     .eq("game_key", game_key)
+     .execute())
+
+
+def reset_failed(db, league_id: str):
+    (db.table("lineup_context_backfill_status")
+     .update({"status": "pending", "error_msg": None})
+     .eq("league_id", league_id)
+     .eq("status", "failed")
+     .execute())
+    log.info("Reset failed rows to pending for league %s", league_id)
+
+
+def print_status(db, league_id: str):
+    res = (db.table("lineup_context_backfill_status")
+           .select("status")
+           .eq("league_id", league_id)
+           .execute())
+    rows = res.data or []
+    counts = defaultdict(int)
+    for r in rows:
+        counts[r["status"]] += 1
+    total = len(rows)
+    print(f"\n{'─'*45}")
+    print(f"League: {league_id}")
+    print(f"{'─'*45}")
+    print(f"  Total games tracked : {total}")
+    for status in ("complete", "pending", "running", "failed"):
+        n = counts.get(status, 0)
+        if n or status in ("complete", "pending"):
+            pct = f" ({n/total*100:.0f}%)" if total else ""
+            print(f"  {status:<18}: {n}{pct}")
+    print(f"{'─'*45}\n")
 
 
 # ---------------------------------------------------------------------------
-# Tracking table population (upsert pending / preserve complete)
+# Core per-game processing (Python implementation of the SQL CTE)
 # ---------------------------------------------------------------------------
 
-UPSERT_TRACKING_SQL = """
-INSERT INTO lineup_context_backfill_status (game_key, league_id, status, stint_count, updated_at)
-SELECT
-    ls.game_key,
-    ls.league_id,
-    CASE
-        WHEN EXISTS (
-            SELECT 1
-            FROM lineup_stints_context_v1 ctx
-            WHERE ctx.game_key  = ls.game_key
-              AND ctx.league_id = ls.league_id
-        ) THEN 'complete'
-        ELSE 'pending'
-    END AS status,
-    COUNT(*)  AS stint_count,
-    now()     AS updated_at
-FROM lineup_stints ls
-WHERE ls.league_id = %(league_id)s
-GROUP BY ls.game_key, ls.league_id
-ON CONFLICT (game_key, league_id) DO UPDATE
-    SET stint_count = EXCLUDED.stint_count,
-        updated_at  = now(),
-        status      = CASE
-                          WHEN lineup_context_backfill_status.status = 'complete'
-                          THEN 'complete'
-                          ELSE EXCLUDED.status
-                      END;
-"""
+def fetch_stints(db, game_key: str, league_id: str) -> list:
+    page, page_size, results = 0, 1000, []
+    while True:
+        res = (db.table("lineup_stints")
+               .select("*")
+               .eq("game_key", game_key)
+               .eq("league_id", league_id)
+               .range(page * page_size, (page + 1) * page_size - 1)
+               .execute())
+        batch = res.data or []
+        results.extend(batch)
+        if len(batch) < page_size:
+            break
+        page += 1
+    return results
 
 
-def populate_tracking(conn, league_id: str):
-    """Upsert tracking rows for all games in the league."""
-    with conn.cursor() as cur:
-        cur.execute(UPSERT_TRACKING_SQL, {"league_id": league_id})
-    conn.commit()
-    log.info("Tracking table populated/refreshed for league %s.", league_id)
+def compute_context_rows(stints: list) -> list:
+    """
+    Replicate the CTE logic in Python:
+      1. Sort stints per team by (start_game_secs, start_action).
+      2. Compute score_margin = cumulative net points BEFORE this stint.
+      3. Derive is_garbage_time, is_short_clock_end_period, is_competitive_stint.
+    """
+    # Group by team_id for window function
+    by_team = defaultdict(list)
+    for s in stints:
+        by_team[s["team_id"]].append(s)
 
-
-# ---------------------------------------------------------------------------
-# --status mode
-# ---------------------------------------------------------------------------
-
-STATUS_SQL = """
-SELECT
-    status,
-    COUNT(*)                        AS game_count,
-    SUM(stint_count)                AS source_stints,
-    SUM(COALESCE(inserted_rows, 0)) AS inserted_rows
-FROM lineup_context_backfill_status
-WHERE league_id = %(league_id)s
-GROUP BY status
-ORDER BY status;
-"""
-
-
-def print_status(conn, league_id: str):
-    """Print a summary table of backfill progress for the league."""
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(STATUS_SQL, {"league_id": league_id})
-        rows = cur.fetchall()
-
-    if not rows:
-        print(f"No tracking rows found for league {league_id}.")
-        print("Run without --status first to initialise the tracking table.")
-        return
-
-    print()
-    print(f"Backfill status — league {league_id}")
-    print("-" * 60)
-    fmt = "{:<12} {:>10} {:>15} {:>15}"
-    print(fmt.format("Status", "Games", "Source Stints", "Inserted Rows"))
-    print("-" * 60)
-    for row in rows:
-        print(fmt.format(
-            row["status"],
-            row["game_count"],
-            row["source_stints"] or 0,
-            row["inserted_rows"] or 0,
+    output = []
+    for team_id, team_stints in by_team.items():
+        team_stints.sort(key=lambda s: (
+            s.get("start_game_secs") or 0,
+            s.get("start_action") or 0,
         ))
-    print("-" * 60)
-    print()
+        cumulative = 0
+        for s in team_stints:
+            score_margin = cumulative
+            pf = s.get("points_for") or 0
+            pa = s.get("points_against") or 0
+            cumulative += pf - pa
+
+            period = s.get("period") or 0
+            sgs = s.get("start_game_secs") or 0
+            margin_abs = abs(score_margin)
+            is_valid = s.get("is_valid_lineup", True)
+
+            # Garbage time: Q4 only, tiered by start_game_secs
+            if period == 4:
+                if sgs >= 2100 and margin_abs >= 10:
+                    is_garbage = True
+                elif sgs >= 1950 and margin_abs >= 20:
+                    is_garbage = True
+                elif sgs >= 1800 and margin_abs >= 25:
+                    is_garbage = True
+                else:
+                    is_garbage = False
+            else:
+                is_garbage = False
+
+            # Short-clock end-of-period: Q1/Q2/Q3 only
+            if period == 1 and sgs >= 598:
+                is_short = True
+            elif period == 2 and sgs >= 1198:
+                is_short = True
+            elif period == 3 and sgs >= 1798:
+                is_short = True
+            else:
+                is_short = False
+
+            is_competitive = bool(is_valid and not is_garbage and not is_short)
+
+            output.append({
+                "stint_id": s["id"],
+                "game_key": s["game_key"],
+                "league_id": s["league_id"],
+                "team_id": s["team_id"],
+                "lineup_key": s.get("lineup_key"),
+                "lineup_player_ids": s.get("lineup_player_ids"),
+                "lineup_names": s.get("lineup_names"),
+                "period": period,
+                "start_action": s.get("start_action"),
+                "end_action": s.get("end_action"),
+                "start_clock": s.get("start_clock"),
+                "end_clock": s.get("end_clock"),
+                "start_game_secs": sgs,
+                "end_game_secs": s.get("end_game_secs"),
+                "seconds_played": s.get("seconds_played") or 0,
+                "points_for": pf,
+                "points_against": pa,
+                "fg2_made": s.get("fg2_made") or 0,
+                "fg2_attempted": s.get("fg2_attempted") or 0,
+                "fg3_made": s.get("fg3_made") or 0,
+                "fg3_attempted": s.get("fg3_attempted") or 0,
+                "ft_made": s.get("ft_made") or 0,
+                "ft_attempted": s.get("ft_attempted") or 0,
+                "oreb": s.get("oreb") or 0,
+                "dreb": s.get("dreb") or 0,
+                "assists": s.get("assists") or 0,
+                "turnovers": s.get("turnovers") or 0,
+                "fouls": s.get("fouls") or 0,
+                "steals": s.get("steals") or 0,
+                "blocks": s.get("blocks") or 0,
+                "possessions_for": s.get("possessions_for") or 0,
+                "possessions_against": s.get("possessions_against") or 0,
+                "is_valid_lineup": is_valid,
+                "score_margin": score_margin,
+                "is_garbage_time": is_garbage,
+                "is_short_clock_end_period": is_short,
+                "is_competitive_stint": is_competitive,
+            })
+    return output
 
 
-# ---------------------------------------------------------------------------
-# --reset-failed mode
-# ---------------------------------------------------------------------------
-
-RESET_FAILED_SQL = """
-UPDATE lineup_context_backfill_status
-SET status     = 'pending',
-    error_msg  = NULL,
-    updated_at = now()
-WHERE league_id = %(league_id)s
-  AND status    = 'failed';
-"""
+def delete_context_for_game(db, game_key: str, league_id: str):
+    (db.table("lineup_stints_context_v1")
+     .delete()
+     .eq("game_key", game_key)
+     .eq("league_id", league_id)
+     .execute())
 
 
-def reset_failed(conn, league_id: str):
-    """Reset all failed rows back to pending for the given league."""
-    with conn.cursor() as cur:
-        cur.execute(RESET_FAILED_SQL, {"league_id": league_id})
-        count = cur.rowcount
-    conn.commit()
-    log.info("Reset %d failed game(s) back to pending for league %s.", count, league_id)
+def insert_context_rows(db, rows: list) -> int:
+    chunk_size = 200
+    inserted = 0
+    for i in range(0, len(rows), chunk_size):
+        db.table("lineup_stints_context_v1").insert(rows[i:i+chunk_size]).execute()
+        inserted += len(rows[i:i+chunk_size])
+    return inserted
 
 
-# ---------------------------------------------------------------------------
-# Game selection
-# ---------------------------------------------------------------------------
-
-SELECT_PENDING_SQL = """
-SELECT game_key, stint_count
-FROM lineup_context_backfill_status
-WHERE league_id = %(league_id)s
-  AND status    = 'pending'
-ORDER BY stint_count ASC
-LIMIT %(limit)s;
-"""
-
-SELECT_ONE_GAME_SQL = """
-SELECT game_key, stint_count
-FROM lineup_context_backfill_status
-WHERE league_id = %(league_id)s
-  AND game_key  = %(game_key)s;
-"""
-
-
-def select_games(conn, league_id: str, game_key: str = None, limit: int = 10):
+def process_game(db, league_id: str, game_key: str) -> int:
     """
-    Return a list of (game_key, stint_count) tuples to process.
-
-    If game_key is provided, return only that game (ignoring limit).
-    Otherwise return up to `limit` pending games ordered by stint_count ASC.
+    Process a single game:
+      1. Mark running.
+      2. Fetch stints.
+      3. Compute context rows in Python.
+      4. Delete old context rows, insert new ones.
+      5. Mark complete.
+    Returns number of rows inserted.
     """
-    with conn.cursor() as cur:
-        if game_key:
-            cur.execute(SELECT_ONE_GAME_SQL, {"league_id": league_id, "game_key": game_key})
-        else:
-            cur.execute(SELECT_PENDING_SQL, {"league_id": league_id, "limit": limit})
-        return cur.fetchall()
-
-
-# ---------------------------------------------------------------------------
-# Per-game processing
-# ---------------------------------------------------------------------------
-
-MARK_RUNNING_SQL = """
-UPDATE lineup_context_backfill_status
-SET status     = 'running',
-    updated_at = now()
-WHERE league_id = %(league_id)s
-  AND game_key  = %(game_key)s;
-"""
-
-MARK_COMPLETE_SQL = """
-UPDATE lineup_context_backfill_status
-SET status        = 'complete',
-    inserted_rows = %(inserted_rows)s,
-    error_msg     = NULL,
-    updated_at    = now()
-WHERE league_id = %(league_id)s
-  AND game_key  = %(game_key)s;
-"""
-
-MARK_FAILED_SQL = """
-UPDATE lineup_context_backfill_status
-SET status     = 'failed',
-    error_msg  = %(error_msg)s,
-    updated_at = now()
-WHERE league_id = %(league_id)s
-  AND game_key  = %(game_key)s;
-"""
-
-DELETE_CONTEXT_ROWS_SQL = """
-DELETE FROM lineup_stints_context_v1
-WHERE game_key  = %(game_key)s
-  AND league_id = %(league_id)s;
-"""
-
-# Full INSERT ... WITH CTE.
-#
-# CTE chain:
-#   starters    — Starting-five player IDs per team from game_rosters.
-#                 Joined into base so the query uses game_rosters data;
-#                 starter_ids propagates through but is not projected into
-#                 the INSERT column list.
-#   base        — All lineup_stints rows for this game, LEFT JOIN starters.
-#   with_margin — score_margin = cumulative (points_for - points_against)
-#                 UP TO BUT NOT INCLUDING the current stint (the margin the
-#                 lineup inherited at its start).  Uses
-#                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING.
-#                 COALESCE handles the first stint (no preceding rows → 0).
-#   flagged     — Derives is_garbage_time and is_short_clock_end_period.
-#   final       — Computes is_competitive_stint and feeds the INSERT.
-#
-# Garbage-time (40-minute FIBA game):
-#   Q4 only (period = 4). Three tiered bands by start_game_secs:
-#     1800 – 1949 s : |margin| >= 25
-#     1950 – 2099 s : |margin| >= 20
-#     >= 2100 s      : |margin| >= 10
-#   OT (period >= 5) is never garbage time.
-#
-# Short-clock-end-period:
-#   Exact second cutoffs per regulation quarter:
-#     Q1 end : start_game_secs >= 598
-#     Q2 end : start_game_secs >= 1198
-#     Q3 end : start_game_secs >= 1798
-#   Q4 end is handled by the garbage-time flag; OT is excluded.
-
-INSERT_CONTEXT_SQL = """
-WITH starters AS (
-    SELECT
-        gr.game_key,
-        gr.team_id,
-        array_agg(gr.player_id::text ORDER BY gr.player_id::text)
-            FILTER (WHERE gr.starter = true AND gr.player_id IS NOT NULL) AS starter_ids
-    FROM game_rosters gr
-    WHERE gr.game_key = %(game_key)s
-    GROUP BY gr.game_key, gr.team_id
-),
-base AS (
-    SELECT
-        ls.id,
-        ls.game_key,
-        ls.league_id,
-        ls.team_id,
-        ls.lineup_key,
-        ls.lineup_player_ids,
-        ls.lineup_names,
-        ls.period,
-        ls.start_action,
-        ls.end_action,
-        ls.start_clock,
-        ls.end_clock,
-        ls.start_game_secs,
-        ls.end_game_secs,
-        ls.seconds_played,
-        ls.points_for,
-        ls.points_against,
-        ls.fg2_made,
-        ls.fg2_attempted,
-        ls.fg3_made,
-        ls.fg3_attempted,
-        ls.ft_made,
-        ls.ft_attempted,
-        ls.oreb,
-        ls.dreb,
-        ls.assists,
-        ls.turnovers,
-        ls.fouls,
-        ls.steals,
-        ls.blocks,
-        ls.possessions_for,
-        ls.possessions_against,
-        ls.is_valid_lineup,
-        s.starter_ids
-    FROM lineup_stints ls
-    LEFT JOIN starters s
-           ON s.game_key = ls.game_key
-          AND s.team_id  = ls.team_id
-    WHERE ls.game_key  = %(game_key)s
-      AND ls.league_id = %(league_id)s
-),
-with_margin AS (
-    SELECT
-        b.*,
-        -- score_margin: cumulative net points up to but NOT including this
-        -- stint — i.e. the score the lineup walked on to the court with.
-        COALESCE(
-            SUM(b.points_for - b.points_against) OVER (
-                PARTITION BY b.game_key, b.team_id
-                ORDER BY b.start_game_secs, b.start_action
-                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-            ), 0
-        ) AS score_margin
-    FROM base b
-),
-flagged AS (
-    SELECT
-        wm.*,
-        -- Garbage time: Q4 only (period = 4), three tiered bands.
-        -- Band cutoffs use start_game_secs; thresholds decrease as time runs out.
-        -- OT (period >= 5) is never flagged.
-        CASE
-            WHEN wm.period = 4
-                 AND wm.start_game_secs >= 2100
-                 AND ABS(wm.score_margin) >= 10 THEN true
-            WHEN wm.period = 4
-                 AND wm.start_game_secs >= 1950
-                 AND ABS(wm.score_margin) >= 20 THEN true
-            WHEN wm.period = 4
-                 AND wm.start_game_secs >= 1800
-                 AND ABS(wm.score_margin) >= 25 THEN true
-            ELSE false
-        END AS is_garbage_time,
-        -- Short-clock end of period: Q1/Q2/Q3 only.
-        -- Each quarter has an exact start_game_secs cutoff for its final ~2 s:
-        --   Q1 end: start_game_secs >= 598  (2 s before 600)
-        --   Q2 end: start_game_secs >= 1198 (2 s before 1200)
-        --   Q3 end: start_game_secs >= 1798 (2 s before 1800)
-        -- Q4 end is already covered by the garbage-time flag; OT is excluded.
-        CASE
-            WHEN wm.period = 1 AND wm.start_game_secs >= 598  THEN true
-            WHEN wm.period = 2 AND wm.start_game_secs >= 1198 THEN true
-            WHEN wm.period = 3 AND wm.start_game_secs >= 1798 THEN true
-            ELSE false
-        END AS is_short_clock_end_period
-    FROM with_margin wm
-)
-INSERT INTO lineup_stints_context_v1 (
-    stint_id,
-    game_key,
-    league_id,
-    team_id,
-    lineup_key,
-    lineup_player_ids,
-    lineup_names,
-    period,
-    start_action,
-    end_action,
-    start_clock,
-    end_clock,
-    start_game_secs,
-    end_game_secs,
-    seconds_played,
-    points_for,
-    points_against,
-    fg2_made,
-    fg2_attempted,
-    fg3_made,
-    fg3_attempted,
-    ft_made,
-    ft_attempted,
-    oreb,
-    dreb,
-    assists,
-    turnovers,
-    fouls,
-    steals,
-    blocks,
-    possessions_for,
-    possessions_against,
-    is_valid_lineup,
-    score_margin,
-    is_garbage_time,
-    is_short_clock_end_period,
-    is_competitive_stint
-)
-SELECT
-    f.id                   AS stint_id,
-    f.game_key,
-    f.league_id,
-    f.team_id,
-    f.lineup_key,
-    f.lineup_player_ids,
-    f.lineup_names,
-    f.period,
-    f.start_action,
-    f.end_action,
-    f.start_clock,
-    f.end_clock,
-    f.start_game_secs,
-    f.end_game_secs,
-    f.seconds_played,
-    f.points_for,
-    f.points_against,
-    f.fg2_made,
-    f.fg2_attempted,
-    f.fg3_made,
-    f.fg3_attempted,
-    f.ft_made,
-    f.ft_attempted,
-    f.oreb,
-    f.dreb,
-    f.assists,
-    f.turnovers,
-    f.fouls,
-    f.steals,
-    f.blocks,
-    f.possessions_for,
-    f.possessions_against,
-    f.is_valid_lineup,
-    f.score_margin,
-    f.is_garbage_time,
-    f.is_short_clock_end_period,
-    (f.is_valid_lineup AND NOT f.is_garbage_time AND NOT f.is_short_clock_end_period)
-        AS is_competitive_stint
-FROM flagged f;
-"""
-
-COUNT_INSERTED_SQL = """
-SELECT COUNT(*) AS n
-FROM lineup_stints_context_v1
-WHERE game_key  = %(game_key)s
-  AND league_id = %(league_id)s;
-"""
-
-
-def process_game(conn, league_id: str, game_key: str) -> int:
-    """
-    Process a single game inside one transaction.
-
-    Sequence (all within the same transaction):
-      1. Mark running in tracking table.
-      2. Delete existing context rows for this game (idempotent re-run).
-      3. INSERT new context rows via the CTE query.
-      4. Count inserted rows.
-      5. Mark complete in tracking table.
-
-    On any exception the transaction is rolled back, then a separate
-    single-statement transaction marks the game as failed with the error.
-
-    Returns the number of rows inserted.
-    """
-    params = {"league_id": league_id, "game_key": game_key}
-
+    mark_running(db, league_id, game_key)
     try:
-        with conn.cursor() as cur:
-            cur.execute(MARK_RUNNING_SQL, params)
-            cur.execute(DELETE_CONTEXT_ROWS_SQL, params)
-            cur.execute(INSERT_CONTEXT_SQL, params)
-            cur.execute(COUNT_INSERTED_SQL, params)
-            row = cur.fetchone()
-            inserted = row[0] if row else 0
-            cur.execute(MARK_COMPLETE_SQL, {**params, "inserted_rows": inserted})
-        conn.commit()
+        stints = fetch_stints(db, game_key, league_id)
+        if not stints:
+            log.warning("No stints found for game %s — marking complete with 0 rows", game_key)
+            mark_complete(db, league_id, game_key, 0)
+            return 0
 
-        log.info("game=%s  inserted=%d context rows", game_key, inserted)
+        context_rows = compute_context_rows(stints)
+        delete_context_for_game(db, game_key, league_id)
+        inserted = insert_context_rows(db, context_rows)
+        mark_complete(db, league_id, game_key, inserted)
+        log.info("  ✅ %s — %d stints → %d context rows", game_key, len(stints), inserted)
         return inserted
-
-    except Exception as exc:
-        conn.rollback()
-        err_msg = str(exc)[:1000]
-        log.error("game=%s  FAILED: %s", game_key, err_msg)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(MARK_FAILED_SQL, {**params, "error_msg": err_msg})
-            conn.commit()
-        except Exception as mark_exc:
-            log.error("Could not mark game=%s as failed: %s", game_key, mark_exc)
-            conn.rollback()
-        raise
+    except Exception as e:
+        err = str(e)
+        log.error("  ❌ %s — %s", game_key, err)
+        mark_failed(db, league_id, game_key, err)
+        return 0
 
 
 # ---------------------------------------------------------------------------
-# Main
+# CLI entry point
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description=textwrap.dedent("""\
-            Backfill lineup_stints_context_v1 for a large league one game at a time.
-            Uses a tracking table to allow safe resumption after failures.
-        """),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Backfill lineup_stints_context_v1 for a league, one game at a time."
     )
-    parser.add_argument(
-        "--league-id",
-        dest="league_id",
-        required=True,
-        help="UUID of the league to process.",
-    )
-    parser.add_argument(
-        "--limit",
-        dest="limit",
-        type=int,
-        default=10,
-        help="Number of pending games to process (default: 10). Ignored when --game-key is set.",
-    )
-    parser.add_argument(
-        "--game-key",
-        dest="game_key",
-        default=None,
-        help="Process exactly this one game key and exit.",
-    )
-    parser.add_argument(
-        "--reset-failed",
-        dest="reset_failed",
-        action="store_true",
-        default=False,
-        help="Reset failed games back to pending before selecting games to process.",
-    )
-    parser.add_argument(
-        "--status",
-        dest="status",
-        action="store_true",
-        default=False,
-        help="Print a progress summary table for the league and exit.",
-    )
-
+    parser.add_argument("--league-id", required=True, help="League UUID")
+    parser.add_argument("--status", action="store_true",
+                        help="Show backfill progress and exit")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Max number of pending games to process")
+    parser.add_argument("--game-key", default=None,
+                        help="Process a single specific game_key")
+    parser.add_argument("--reset-failed", action="store_true",
+                        help="Reset failed games to pending before processing")
     args = parser.parse_args()
+
     league_id = args.league_id
+    db = get_db()
 
-    conn = get_conn()
+    # Ensure tracking rows exist for all games in this league
+    total = ensure_tracking_rows(db, league_id)
+    log.info("Tracking table covers %d games for league %s", total, league_id)
 
-    try:
-        ensure_schema(conn)
-        populate_tracking(conn, league_id)
+    if args.reset_failed:
+        reset_failed(db, league_id)
 
-        if args.status:
-            print_status(conn, league_id)
-            return
+    if args.status:
+        print_status(db, league_id)
+        return
 
-        if args.reset_failed:
-            reset_failed(conn, league_id)
+    if args.game_key:
+        # Single game mode
+        process_game(db, league_id, args.game_key)
+        print_status(db, league_id)
+        return
 
-        games = select_games(
-            conn,
-            league_id=league_id,
-            game_key=args.game_key,
-            limit=args.limit,
-        )
+    # Batch mode
+    pending = get_pending_games(db, league_id, limit=args.limit)
+    if not pending:
+        log.info("No pending games — nothing to do.")
+        print_status(db, league_id)
+        return
 
-        if not games:
-            log.info("No pending games found for league %s.", league_id)
-            print_status(conn, league_id)
-            return
+    log.info("Processing %d pending game(s)...", len(pending))
+    total_inserted = 0
+    for i, gk in enumerate(pending, 1):
+        log.info("[%d/%d] %s", i, len(pending), gk)
+        total_inserted += process_game(db, league_id, gk)
 
-        log.info("Selected %d game(s) to process.", len(games))
-
-        processed = 0
-        errors = 0
-
-        for (gk, stint_count) in games:
-            log.info("Processing game_key=%s  (stint_count=%d)", gk, stint_count)
-            try:
-                process_game(conn, league_id, gk)
-                processed += 1
-            except Exception:
-                errors += 1
-
-        print()
-        print("=" * 60)
-        print("Lineup context backfill batch complete")
-        print(f"  League    : {league_id}")
-        print(f"  Processed : {processed}")
-        print(f"  Errors    : {errors}")
-        print("=" * 60)
-        print()
-        print_status(conn, league_id)
-
-    finally:
-        conn.close()
+    log.info("Done. Total context rows inserted: %d", total_inserted)
+    print_status(db, league_id)
 
 
 if __name__ == "__main__":
