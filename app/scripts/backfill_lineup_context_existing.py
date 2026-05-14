@@ -42,16 +42,25 @@ logging.basicConfig(
 )
 log = logging.getLogger("backfill_lineup_context")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Prefer SUPABASE_DB_URL (direct Postgres URL for the Supabase project).
+# Falls back to DATABASE_URL for local dev / CI.
+# Set SUPABASE_DB_URL in Replit Secrets:
+#   postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+# (Supabase Dashboard → Settings → Database → Connection string → URI)
+DATABASE_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
 
 # ---------------------------------------------------------------------------
 # Database connection
 # ---------------------------------------------------------------------------
 
 def get_conn():
-    """Open a psycopg2 connection from DATABASE_URL."""
+    """Open a psycopg2 connection using SUPABASE_DB_URL or DATABASE_URL."""
     if not DATABASE_URL:
-        log.error("DATABASE_URL environment variable is not set.")
+        log.error(
+            "No database URL found. Set SUPABASE_DB_URL in Replit Secrets.\n"
+            "  Supabase Dashboard → Settings → Database → Connection string → URI\n"
+            "  Format: postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
+        )
         sys.exit(1)
     return psycopg2.connect(DATABASE_URL)
 
