@@ -47,7 +47,11 @@ log = logging.getLogger("backfill_lineup_context")
 # Set SUPABASE_DB_URL in Replit Secrets:
 #   postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
 # (Supabase Dashboard → Settings → Database → Connection string → URI)
-DATABASE_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+DATABASE_URL = (
+    os.getenv("SUPABASE_DATABASE_URL")
+    or os.getenv("SUPABASE_DB_URL")
+    or os.getenv("DATABASE_URL")
+)
 
 # ---------------------------------------------------------------------------
 # Database connection
