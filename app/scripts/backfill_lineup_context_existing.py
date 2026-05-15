@@ -173,7 +173,7 @@ def _weighted_opp_stats(stint: dict, opp_stints: list) -> dict:
     s1 = stint.get("start_game_secs") or 0
     e1 = stint.get("end_game_secs") or 0
     if e1 <= s1:
-        return {"opp_oreb": 0, "opp_dreb": 0, "opp_fga2": 0}
+        return {"opp_oreb": 0, "opp_dreb": 0, "opp_fg2_attempted": 0}
 
     opp_oreb = opp_dreb = opp_fga2 = 0.0
     for o in opp_stints:
@@ -190,9 +190,9 @@ def _weighted_opp_stats(stint: dict, opp_stints: list) -> dict:
         opp_fga2 += (o.get("fg2_attempted") or 0) * frac
 
     return {
-        "opp_oreb": round(opp_oreb, 2),
-        "opp_dreb": round(opp_dreb, 2),
-        "opp_fga2": round(opp_fga2, 2),
+        "opp_oreb":          round(opp_oreb, 2),
+        "opp_dreb":          round(opp_dreb, 2),
+        "opp_fg2_attempted": round(opp_fga2, 2),
     }
 
 
@@ -297,7 +297,7 @@ def compute_context_rows(stints: list) -> list:
                 "is_competitive_stint":      is_valid and not is_garbage and not is_short,
                 "opp_oreb":                  opp["opp_oreb"],
                 "opp_dreb":                  opp["opp_dreb"],
-                "opp_fga2":                  opp["opp_fga2"],
+                "opp_fg2_attempted":         opp["opp_fg2_attempted"],
             })
     return output
 
