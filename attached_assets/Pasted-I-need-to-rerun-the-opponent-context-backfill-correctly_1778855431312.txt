@@ -1,0 +1,156 @@
+I need to rerun the opponent-context backfill correctly for all games in lineup_stints_context_v1.
+
+Context:
+We added these columns to lineup_stints_context_v1:
+- opp_oreb
+- opp_dreb
+- opp_fg2_attempted
+- opponent_context_status
+- opponent_context_updated_at
+
+The first backfill partly worked, but some rows were marked complete even though opponent context was still zero. We fixed one player’s games manually using the corrected overlap logic and it worked. Now I need the corrected process rerun for every game.
+
+Important:
+- Process game-by-game, not one huge query.
+- Use a transaction per game.
+- Only mark rows complete after the update succeeds.
+- Ignore zero-second rows by setting opponent_context_status = 'ignored_zero_seconds'.
+- For positive-second rows, calculate opponent context using overlapping opponent stints.
+
+Before processing:
+Set zero-second rows to ignored:
+
+update lineup_stints_context_v1
+set
+  opponent_context_status = 'ignored_zero_seconds',
+  opponent_context_updated_at = now()
+where seconds_played = 0;
+
+For each game_key, run this update logic:
+
+with opponent_values as (
+  select
+    cur.id,
+
+    coalesce(sum(
+      coalesce(opp.oreb, 0)::numeric
+      * (
+        greatest(
+          0,
+          least(cur.end_game_secs, opp.end_game_secs)
+          - greatest(cur.start_game_secs, opp.start_game_secs)
+        )::numeric
+        / nullif(opp.seconds_played, 0)
+      )
+    ), 0) as opp_oreb,
+
+    coalesce(sum(
+      coalesce(opp.dreb, 0)::numeric
+      * (
+        greatest(
+          0,
+          least(cur.end_game_secs, opp.end_game_secs)
+          - greatest(cur.start_game_secs, opp.start_game_secs)
+        )::numeric
+        / nullif(opp.seconds_played, 0)
+      )
+    ), 0) as opp_dreb,
+
+    coalesce(sum(
+      coalesce(opp.fg2_attempted, 0)::numeric
+      * (
+        greatest(
+          0,
+          least(cur.end_game_secs, opp.end_game_secs)
+          - greatest(cur.start_game_secs, opp.start_game_secs)
+        )::numeric
+        / nullif(opp.seconds_played, 0)
+      )
+    ), 0) as opp_fg2_attempted
+
+  from lineup_stints_context_v1 cur
+
+  left join lineup_stints_context_v1 opp
+    on opp.game_key = cur.game_key
+   and opp.period = cur.period
+   and opp.team_id <> cur.team_id
+   and opp.start_game_secs < cur.end_game_secs
+   and opp.end_game_secs > cur.start_game_secs
+   and opp.seconds_played > 0
+
+  where cur.game_key = %(game_key)s
+    and cur.seconds_played > 0
+
+  group by cur.id
+)
+
+update lineup_stints_context_v1 cur
+set
+  opp_oreb = ov.opp_oreb,
+  opp_dreb = ov.opp_dreb,
+  opp_fg2_attempted = ov.opp_fg2_attempted,
+  opponent_context_status = 'complete',
+  opponent_context_updated_at = now()
+from opponent_values ov
+where cur.id = ov.id;
+
+Create or update a script:
+app/scripts/backfill_opponent_context.py
+
+CLI:
+python -m app.scripts.backfill_opponent_context --all
+python -m app.scripts.backfill_opponent_context --league-id <LEAGUE_ID>
+python -m app.scripts.backfill_opponent_context --game-key <GAME_KEY>
+python -m app.scripts.backfill_opponent_context --status
+
+The script should:
+1. Fetch distinct game_key values from lineup_stints_context_v1 where seconds_played > 0.
+2. Process each game individually.
+3. Print progress:
+   game_key, rows_updated, total games processed, errors.
+4. Continue if one game fails.
+5. At the end, print summary:
+   total games, successful, failed.
+
+After completion, run these checks:
+
+select
+  count(*) as total_rows,
+  count(*) filter (where opponent_context_status = 'complete') as complete_rows,
+  count(*) filter (where opponent_context_status = 'ignored_zero_seconds') as ignored_zero_second_rows,
+  count(*) filter (
+    where seconds_played > 0
+      and opponent_context_status <> 'complete'
+  ) as positive_second_incomplete_rows,
+  round(sum(opp_oreb), 2) as total_opp_oreb,
+  round(sum(opp_dreb), 2) as total_opp_dreb,
+  round(sum(opp_fg2_attempted), 2) as total_opp_fg2_attempted
+from lineup_stints_context_v1;
+
+Then check suspicious positive-second rows:
+
+select
+  game_key,
+  league_id,
+  count(*) as rows,
+  count(*) filter (
+    where seconds_played > 0
+      and opponent_context_status = 'complete'
+      and coalesce(opp_oreb, 0) = 0
+      and coalesce(opp_dreb, 0) = 0
+      and coalesce(opp_fg2_attempted, 0) = 0
+  ) as zero_opp_context_rows
+from lineup_stints_context_v1
+where seconds_played > 0
+group by game_key, league_id
+having count(*) filter (
+    where seconds_played > 0
+      and opponent_context_status = 'complete'
+      and coalesce(opp_oreb, 0) = 0
+      and coalesce(opp_dreb, 0) = 0
+      and coalesce(opp_fg2_attempted, 0) = 0
+) > 0
+order by zero_opp_context_rows desc
+limit 50;
+
+Do not change the player_on_off views or frontend in this task. This is only the corrected opponent-context backfill.
