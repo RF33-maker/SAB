@@ -162,9 +162,48 @@ def fetch_stints(db, game_key: str, league_id: str) -> list:
     return results
 
 
+def _weighted_opp_stats(stint: dict, opp_stints: list) -> dict:
+    """
+    For a given team stint, sum the opponent's oreb/dreb/fg2_attempted
+    weighted by the fraction of each opponent stint that overlaps the team stint.
+
+    Uses start_game_secs / end_game_secs for overlap detection.
+    Falls back to 0 for any stint that has no valid timing.
+    """
+    s1 = stint.get("start_game_secs") or 0
+    e1 = stint.get("end_game_secs") or 0
+    if e1 <= s1:
+        return {"opp_oreb": 0, "opp_dreb": 0, "opp_fga2": 0}
+
+    opp_oreb = opp_dreb = opp_fga2 = 0.0
+    for o in opp_stints:
+        s2 = o.get("start_game_secs") or 0
+        e2 = o.get("end_game_secs") or 0
+        if e2 <= s2:
+            continue
+        overlap = max(0, min(e1, e2) - max(s1, s2))
+        if overlap <= 0:
+            continue
+        frac = overlap / (e2 - s2)
+        opp_oreb += (o.get("oreb") or 0) * frac
+        opp_dreb += (o.get("dreb") or 0) * frac
+        opp_fga2 += (o.get("fg2_attempted") or 0) * frac
+
+    return {
+        "opp_oreb": round(opp_oreb, 2),
+        "opp_dreb": round(opp_dreb, 2),
+        "opp_fga2": round(opp_fga2, 2),
+    }
+
+
 def compute_context_rows(stints: list) -> list:
     """
-    Compute score_margin (window fn) and derive flags for every stint.
+    Compute score_margin (window fn), garbage-time/short-clock flags, and
+    opponent rebound/FGA context for every stint.
+
+    Opponent context (opp_oreb, opp_dreb, opp_fga2):
+        For each stint of Team A, opponent stints that overlap in game-clock
+        time contribute their stats proportionally to the overlap fraction.
 
     Garbage time  — Q4 only, tiered by start_game_secs:
         >= 2100 s and |margin| >= 10
@@ -176,8 +215,17 @@ def compute_context_rows(stints: list) -> list:
     for s in stints:
         by_team[s["team_id"]].append(s)
 
+    team_ids = list(by_team.keys())
+
     output = []
-    for _, team_stints in by_team.items():
+    for i, team_id in enumerate(team_ids):
+        team_stints = by_team[team_id]
+        # Collect all other teams' stints as "opponent" pool
+        opp_stints = []
+        for j, other_id in enumerate(team_ids):
+            if other_id != team_id:
+                opp_stints.extend(by_team[other_id])
+
         team_stints.sort(key=lambda s: (
             s.get("start_game_secs") or 0,
             s.get("start_action") or 0,
@@ -206,6 +254,8 @@ def compute_context_rows(stints: list) -> list:
             is_short = (period == 1 and sgs >= 598) or \
                        (period == 2 and sgs >= 1198) or \
                        (period == 3 and sgs >= 1798)
+
+            opp = _weighted_opp_stats(s, opp_stints)
 
             output.append({
                 "stint_id":                  s["id"],
@@ -245,6 +295,9 @@ def compute_context_rows(stints: list) -> list:
                 "is_garbage_time":           is_garbage,
                 "is_short_clock_end_period": is_short,
                 "is_competitive_stint":      is_valid and not is_garbage and not is_short,
+                "opp_oreb":                  opp["opp_oreb"],
+                "opp_dreb":                  opp["opp_dreb"],
+                "opp_fga2":                  opp["opp_fga2"],
             })
     return output
 
@@ -335,13 +388,15 @@ def main():
                         help="Max games to process this run")
     parser.add_argument("--game-key",    default=None,
                         help="Process one specific game_key")
+    parser.add_argument("--force",       action="store_true",
+                        help="Reprocess all games even if already done")
     args = parser.parse_args()
 
     league_id = args.league_id
     db = get_db()
 
     all_keys  = fetch_all_game_keys(db, league_id)
-    done_keys = fetch_already_done_keys(db, league_id)
+    done_keys = set() if args.force else fetch_already_done_keys(db, league_id)
     pending   = [k for k in all_keys if k not in done_keys]
 
     log.info("League %s: %d total games, %d already done, %d pending",
