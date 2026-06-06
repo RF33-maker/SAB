@@ -1,0 +1,351 @@
+I need a backend script to finish backfilling lineup_stints_context_v1 for one large league only.
+
+Important context:
+- lineup_stints_context_v1 already exists as a physical table.
+- Do NOT drop, recreate, or alter lineup_stints_context_v1 unless absolutely necessary.
+- Several smaller leagues have already been inserted successfully.
+- Only one large league with 10k+ lineup_stints is timing out in Supabase SQL editor.
+- The script should process that league by game_key batches so it does not timeout.
+- Do not modify raw tables: lineup_stints, player_stats, live_events, player_on_off.
+
+Suggested file:
+app/scripts/backfill_lineup_context_existing.py
+
+Goal:
+Create a script that fills lineup_stints_context_v1 for games that are missing from the existing table, for a given league_id.
+
+Required CLI commands:
+python -m app.scripts.backfill_lineup_context_existing --league-id <LEAGUE_ID> --limit 10
+python -m app.scripts.backfill_lineup_context_existing --league-id <LEAGUE_ID> --game-key <GAME_KEY>
+python -m app.scripts.backfill_lineup_context_existing --league-id <LEAGUE_ID> --limit 25 --reset-failed
+python -m app.scripts.backfill_lineup_context_existing --league-id <LEAGUE_ID> --status
+
+Use the existing project database connection pattern. If direct SQL is needed, use psycopg/psycopg2 with env database URL already used by the backend. Do not expose secrets to frontend code.
+
+Create this tracking table if it does not exist:
+
+create table if not exists lineup_context_backfill_status (
+  game_key text primary key,
+  league_id uuid,
+  stint_count integer,
+  status text default 'pending',
+  rows_inserted integer default 0,
+  error_message text,
+  started_at timestamp with time zone,
+  completed_at timestamp with time zone,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+Populate tracking table for the target league only:
+
+insert into lineup_context_backfill_status (
+  game_key,
+  league_id,
+  stint_count,
+  status
+)
+select
+  ls.game_key,
+  ls.league_id,
+  count(*) as stint_count,
+  case
+    when exists (
+      select 1
+      from lineup_stints_context_v1 ctx
+      where ctx.game_key = ls.game_key
+    )
+    then 'complete'
+    else 'pending'
+  end as status
+from lineup_stints ls
+where ls.league_id = %(league_id)s
+group by ls.game_key, ls.league_id
+on conflict (game_key) do update
+set
+  league_id = excluded.league_id,
+  stint_count = excluded.stint_count,
+  status = case
+    when lineup_context_backfill_status.status = 'complete' then 'complete'
+    else excluded.status
+  end,
+  updated_at = now();
+
+If --reset-failed is passed:
+update lineup_context_backfill_status
+set status = 'pending',
+    error_message = null,
+    updated_at = now()
+where league_id = %(league_id)s
+  and status = 'failed';
+
+If --status is passed, print:
+
+select
+  status,
+  count(*) as games,
+  sum(stint_count) as source_stints,
+  sum(rows_inserted) as inserted_rows
+from lineup_context_backfill_status
+where league_id = %(league_id)s
+group by status
+order by status;
+
+Game selection:
+- If --game-key is supplied, process only that game.
+- Otherwise process next pending games:
+select game_key
+from lineup_context_backfill_status
+where league_id = %(league_id)s
+  and status = 'pending'
+order by stint_count asc
+limit %(limit)s;
+
+For each game, use a transaction:
+1. Mark running:
+update lineup_context_backfill_status
+set status = 'running',
+    started_at = now(),
+    completed_at = null,
+    error_message = null,
+    updated_at = now()
+where game_key = %(game_key)s;
+
+2. Delete existing context rows for only that game:
+delete from lineup_stints_context_v1
+where game_key = %(game_key)s;
+
+3. Insert context rows for that game using the SQL below.
+
+Important data rules:
+- score_diff and team_score/opp_score in live_events are not reliable.
+- Score margin must be reconstructed from lineup_stints:
+  score_margin_at_stint_start =
+  cumulative sum(points_for - points_against) for the same game_key + team_id before the current stint,
+  ordered by start_game_secs, start_action.
+- player_stats.player_id is uuid, lineup_stints.lineup_player_ids is text[], so use:
+  s.player_id::text = any(ls.lineup_player_ids)
+
+Garbage time rules:
+Use HoopsJunkie / Cleaning The Glass style logic adapted to 40-minute games:
+- Q4 starts at 1800 game seconds.
+- 10:00–7:31 left Q4 = start_game_secs 1800–1949, garbage if abs margin >= 25
+- 7:30–5:01 left Q4 = start_game_secs 1950–2099, garbage if abs margin >= 20
+- 5:00–0:00 left Q4 = start_game_secs >= 2100, garbage if abs margin >= 10
+- Period > 4 is not garbage by default.
+- Exclude short-clock end-period stints:
+  period 1 start_game_secs >= 598
+  period 2 start_game_secs >= 1198
+  period 3 start_game_secs >= 1798
+
+Insert SQL:
+
+insert into lineup_stints_context_v1 (
+  id,
+  game_key,
+  league_id,
+  team_id,
+  lineup_key,
+  lineup_player_ids,
+  lineup_names,
+  period,
+  start_action,
+  end_action,
+  start_clock,
+  end_clock,
+  start_game_secs,
+  end_game_secs,
+  seconds_played,
+  points_for,
+  points_against,
+  fg2_made,
+  fg2_attempted,
+  fg3_made,
+  fg3_attempted,
+  ft_made,
+  ft_attempted,
+  oreb,
+  dreb,
+  assists,
+  turnovers,
+  fouls,
+  steals,
+  blocks,
+  possessions_for,
+  possessions_against,
+  is_valid_lineup,
+  created_at,
+  team_starters_on_court,
+  score_margin_at_stint_start,
+  abs_score_margin,
+  is_garbage_time,
+  is_short_clock_end_period,
+  is_competitive_stint,
+  context_created_at,
+  context_updated_at
+)
+with starters as (
+  select
+    game_key,
+    team_id,
+    player_id
+  from player_stats
+  where game_key = %(game_key)s
+    and starter = true
+    and player_id is not null
+),
+
+base as (
+  select
+    ls.*,
+
+    (
+      select count(*)
+      from starters s
+      where s.game_key = ls.game_key
+        and s.team_id = ls.team_id
+        and s.player_id::text = any(ls.lineup_player_ids)
+    ) as team_starters_on_court
+
+  from lineup_stints ls
+  where ls.game_key = %(game_key)s
+),
+
+with_margin as (
+  select
+    b.*,
+
+    coalesce(
+      sum(b.points_for - b.points_against) over (
+        partition by b.game_key, b.team_id
+        order by b.start_game_secs, b.start_action
+        rows between unbounded preceding and 1 preceding
+      ),
+      0
+    ) as score_margin_at_stint_start
+
+  from base b
+),
+
+flagged as (
+  select
+    wm.*,
+
+    abs(wm.score_margin_at_stint_start) as abs_score_margin,
+
+    case
+      when wm.period > 4 then false
+
+      when wm.period = 4
+       and wm.start_game_secs between 1800 and 1949
+       and abs(wm.score_margin_at_stint_start) >= 25
+      then true
+
+      when wm.period = 4
+       and wm.start_game_secs between 1950 and 2099
+       and abs(wm.score_margin_at_stint_start) >= 20
+      then true
+
+      when wm.period = 4
+       and wm.start_game_secs >= 2100
+       and abs(wm.score_margin_at_stint_start) >= 10
+      then true
+
+      else false
+    end as is_garbage_time,
+
+    case
+      when wm.period in (1, 2, 3)
+       and (
+         (wm.period = 1 and wm.start_game_secs >= 598)
+         or (wm.period = 2 and wm.start_game_secs >= 1198)
+         or (wm.period = 3 and wm.start_game_secs >= 1798)
+       )
+      then true
+      else false
+    end as is_short_clock_end_period
+
+  from with_margin wm
+)
+
+select
+  f.id,
+  f.game_key,
+  f.league_id,
+  f.team_id,
+  f.lineup_key,
+  f.lineup_player_ids,
+  f.lineup_names,
+  f.period,
+  f.start_action,
+  f.end_action,
+  f.start_clock,
+  f.end_clock,
+  f.start_game_secs,
+  f.end_game_secs,
+  f.seconds_played,
+  f.points_for,
+  f.points_against,
+  f.fg2_made,
+  f.fg2_attempted,
+  f.fg3_made,
+  f.fg3_attempted,
+  f.ft_made,
+  f.ft_attempted,
+  f.oreb,
+  f.dreb,
+  f.assists,
+  f.turnovers,
+  f.fouls,
+  f.steals,
+  f.blocks,
+  f.possessions_for,
+  f.possessions_against,
+  f.is_valid_lineup,
+  f.created_at,
+  f.team_starters_on_court,
+  f.score_margin_at_stint_start,
+  f.abs_score_margin,
+  f.is_garbage_time,
+  f.is_short_clock_end_period,
+
+  case
+    when f.is_valid_lineup = true
+     and f.is_garbage_time = false
+     and f.is_short_clock_end_period = false
+    then true
+    else false
+  end as is_competitive_stint,
+
+  now() as context_created_at,
+  now() as context_updated_at
+
+from flagged f;
+
+4. Count rows:
+select count(*) from lineup_stints_context_v1 where game_key = %(game_key)s;
+
+5. Mark complete:
+update lineup_context_backfill_status
+set status = 'complete',
+    rows_inserted = %(rows_inserted)s,
+    completed_at = now(),
+    updated_at = now()
+where game_key = %(game_key)s;
+
+6. On exception:
+update lineup_context_backfill_status
+set status = 'failed',
+    error_message = %(error_message)s,
+    completed_at = now(),
+    updated_at = now()
+where game_key = %(game_key)s;
+
+Also ensure these indexes exist, but do not fail if they already exist:
+
+create index if not exists idx_lsc_game_key on lineup_stints_context_v1(game_key);
+create index if not exists idx_lsc_league_team on lineup_stints_context_v1(league_id, team_id);
+create index if not exists idx_lsc_flags on lineup_stints_context_v1(is_valid_lineup, is_garbage_time, is_short_clock_end_period, is_competitive_stint);
+create index if not exists idx_lsc_player_ids_gin on lineup_stints_context_v1 using gin(lineup_player_ids);
+
+Do not build the final on/off view yet. This script is only for filling missing lineup_stints_context_v1 rows for the remaining big league.

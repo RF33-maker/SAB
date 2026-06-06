@@ -130,7 +130,7 @@ def test_team_offense_distribution():
     print("TEAM OFFENSE DISTRIBUTION TEST")
     print("=" * 70)
     
-    leagues_result = supabase.table("leagues").select("league_id, name").limit(1).execute()
+    leagues_result = supabase.table("competitions").select("league_id, name").limit(1).execute()
     if not leagues_result.data:
         print("No leagues found!")
         return

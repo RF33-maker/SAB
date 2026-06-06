@@ -227,7 +227,7 @@ def build_league_context(league_id: str) -> Dict:
 
     # League info
     try:
-        result = supabase.table("leagues").select("*").eq("league_id", league_id).execute()
+        result = supabase.table("competitions").select("*").eq("league_id", league_id).execute()
         context['league_info'] = result.data[0] if result.data else {}
     except Exception as e:
         log.error("Error fetching league info: %s", e)

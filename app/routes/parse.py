@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app.utils.chat_data import supabase
 from app.utils.json_parser import run_from_excel
-from app.utils.pdf_parser import parse_pdf
+from app.utils.pdf_parser import parse_pdf, parse_pdf_header_only, _parse_competition_components
 from app.utils.advanced_team_stats import compute_team_advanced, fetch_team_stats_for_league
 import traceback
 import logging
@@ -134,4 +134,122 @@ def handle_parse():
 
     except Exception as e:
         log.error("Fatal error in /api/parse: %s", e, exc_info=True)
+        return jsonify({"error": f"Fatal error: {str(e)}"}), 500
+
+
+@parse_bp.route("/api/parse/scan", methods=["POST"])
+def handle_scan():
+    """
+    Read a PDF from Supabase storage and return its metadata WITHOUT writing
+    anything to the database. Used by the frontend to pre-fill the upload form
+    (parent league, age group, round, teams, report type, etc.).
+
+    Request JSON: { file_path, user_id }
+    Response JSON: { report_type, game_key, competition, parent_league,
+                     age_group, round_name, home_team, away_team,
+                     home_score, away_score, game_date, venue }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing JSON body"}), 400
+
+        file_path = data.get("file_path")
+        if not file_path:
+            return jsonify({"error": "file_path is required"}), 400
+
+        try:
+            bucket, filename = file_path.split("/", 1)
+            file_bytes = supabase.storage.from_(bucket).download(filename)
+        except Exception as dl_err:
+            return jsonify({"error": f"Storage download failed: {dl_err}"}), 500
+
+        if not file_bytes or file_bytes[:4] != b"%PDF":
+            return jsonify({"error": "File is not a valid PDF"}), 400
+
+        result = parse_pdf_header_only(io.BytesIO(file_bytes))
+        if "error" in result:
+            return jsonify(result), 500
+        return jsonify(result)
+
+    except Exception as e:
+        log.error("Fatal error in /api/parse/scan: %s", e, exc_info=True)
+        return jsonify({"error": f"Fatal error: {str(e)}"}), 500
+
+
+@parse_bp.route("/api/leagues", methods=["GET"])
+def list_leagues():
+    """
+    Return all leagues with their auto-parsed components (parent_league,
+    age_group, round_name). The frontend uses this to build a smart
+    parent-league dropdown instead of showing the raw full league name.
+
+    Query params:
+      parent_name  — filter by parent league name (optional, case-insensitive)
+
+    Response JSON:
+    {
+      "leagues": [
+        {
+          "league_id": "...",
+          "name": "REBA Summer League 14U Stop 3 FIBA",
+          "parent_league": "REBA Summer League FIBA",
+          "age_group": "14U",
+          "round_name": "Stop 3"
+        }, ...
+      ],
+      "parents": ["REBA Summer League FIBA", "WEABL 2025-26", ...]
+    }
+    """
+    try:
+        parent_filter = (request.args.get("parent_name") or "").strip().lower()
+
+        # Paginate through all leagues (PostgREST default limit 1000)
+        all_leagues = []
+        offset = 0
+        page_size = 1000
+        while True:
+            res = supabase.table("competitions") \
+                .select("league_id, name, slug, created_by") \
+                .range(offset, offset + page_size - 1) \
+                .execute()
+            batch = res.data or []
+            all_leagues.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+
+        enriched = []
+        parent_set = set()
+        for row in all_leagues:
+            name = row.get("name") or ""
+            components = _parse_competition_components(name)
+            parent = components["parent_league"]
+            parent_set.add(parent)
+            if parent_filter and parent_filter not in parent.lower():
+                continue
+            enriched.append({
+                "league_id": row["league_id"],
+                "name": name,
+                "slug": row.get("slug"),
+                "parent_league": parent,
+                "age_group": components["age_group"],
+                "round_name": components["round_name"],
+            })
+
+        # Sort: parent_league → age_group → round_name
+        enriched.sort(key=lambda x: (
+            x["parent_league"] or "",
+            x["age_group"] or "",
+            x["round_name"] or "",
+        ))
+
+        return jsonify({
+            "leagues": enriched,
+            "parents": sorted(parent_set),
+            "total": len(enriched),
+        })
+
+    except Exception as e:
+        log.error("Fatal error in /api/leagues: %s", e, exc_info=True)
         return jsonify({"error": f"Fatal error: {str(e)}"}), 500

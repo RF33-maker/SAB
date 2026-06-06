@@ -266,13 +266,34 @@ def process_game(game):
             except (ValueError, TypeError):
                 _pno = None
 
+            # action_number: integer, guard against empty string from LiveStats JSON
+            _action_number = p.get("actionNumber")
+            try:
+                _action_number = int(_action_number) if _action_number is not None and _action_number != "" else None
+            except (ValueError, TypeError):
+                _action_number = None
+
+            # period: integer, guard against empty string from LiveStats JSON
+            _period = p.get("period")
+            try:
+                _period = int(_period) if _period is not None and _period != "" else None
+            except (ValueError, TypeError):
+                _period = None
+
+            # previous_action: integer, guard against empty string from LiveStats JSON
+            _previous_action = p.get("previousAction")
+            try:
+                _previous_action = int(_previous_action) if _previous_action is not None and _previous_action != "" else None
+            except (ValueError, TypeError):
+                _previous_action = None
+
             play = {
                 "game_key": game_key,
                 "league_id": league_id,
                 "team_id": team_id,
                 "player_id": player_id,
-                "action_number": p.get("actionNumber"),
-                "period": p.get("period"),
+                "action_number": _action_number,
+                "period": _period,
                 "clock": p.get("clock"),
                 "player_name": player_name,
                 "team_no": team_no,
@@ -287,7 +308,7 @@ def process_game(game):
                 "shirt_number": str(p.get("shirtNumber")) if p.get("shirtNumber") is not None else None,
                 "pno": _pno,
                 "period_type": p.get("periodType"),
-                "previous_action": p.get("previousAction"),
+                "previous_action": _previous_action,
                 "team_score": _team_score,
                 "opp_score": _opp_score,
             }
