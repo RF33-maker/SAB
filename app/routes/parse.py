@@ -18,7 +18,7 @@ def handle_parse_pdf():
 
     Accepts multipart/form-data with:
       - file:         PDF file (required)
-      - league_name:  Competition / league name (required)
+      - competition_name:  Competition / league name (required)
       - game_key:     Override game_key (optional — defaults to PDF_{game_no})
       - user_id:      User UUID for entity tracking (optional)
 
@@ -34,9 +34,12 @@ def handle_parse_pdf():
         if not pdf_file.filename or not pdf_file.filename.lower().endswith(".pdf"):
             return jsonify({"error": "Uploaded file must be a PDF"}), 400
 
-        league_name = request.form.get("league_name", "").strip()
+        league_name = (
+            request.form.get("competition_name", "").strip()
+            or request.form.get("league_name", "").strip()
+        )
         if not league_name:
-            return jsonify({"error": "league_name is required"}), 400
+            return jsonify({"error": "competition_name is required"}), 400
 
         game_key = request.form.get("game_key", "").strip() or None
         user_id = request.form.get("user_id", "").strip() or None
@@ -74,7 +77,11 @@ def handle_parse():
 
         file_path = data.get("file_path")
         user_id = data.get("user_id")
-        league_name = data.get("league_name", "").strip() or None
+        league_name = (
+            data.get("competition_name", "").strip()
+            or data.get("league_name", "").strip()
+            or None
+        )
 
         if not file_path or not user_id:
             log.warning("Missing file_path or user_id")
