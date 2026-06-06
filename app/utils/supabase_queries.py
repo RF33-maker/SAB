@@ -4,7 +4,7 @@ import os
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 def get_league_info(league_name):
-    return supabase.table("leagues").select("*").ilike("name", f"%{league_name}%").execute().data
+    return supabase.table("competitions").select("*").ilike("name", f"%{league_name}%").execute().data
 
 def get_team_info(team_name):
     return supabase.table("teams").select("*").ilike("team", f"%{team_name}%").execute().data

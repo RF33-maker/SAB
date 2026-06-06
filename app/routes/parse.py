@@ -209,7 +209,7 @@ def list_leagues():
         offset = 0
         page_size = 1000
         while True:
-            res = supabase.table("leagues") \
+            res = supabase.table("competitions") \
                 .select("league_id, name, slug, created_by") \
                 .range(offset, offset + page_size - 1) \
                 .execute()

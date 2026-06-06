@@ -287,7 +287,7 @@ def _slugify(text: str) -> str:
 
 
 def get_or_create_league(name: str, user_id: str = None):
-    res = ref_db.table("leagues").select("league_id").eq("name", name).execute()
+    res = ref_db.table("competitions").select("league_id").eq("name", name).execute()
     if res.data:
         return res.data[0]["league_id"]
 
@@ -297,20 +297,20 @@ def get_or_create_league(name: str, user_id: str = None):
         insert_data["created_by"] = user_id
 
     try:
-        new = ref_db.table("leagues").insert(insert_data).execute()
+        new = ref_db.table("competitions").insert(insert_data).execute()
         return new.data[0]["league_id"]
     except Exception as e:
         # Slug collision (23505) — slug already taken. Try appending a short suffix.
         err_str = str(e)
         if "23505" in err_str or "duplicate key" in err_str.lower():
             # Re-check by name first (race condition)
-            retry = ref_db.table("leagues").select("league_id").eq("name", name).execute()
+            retry = ref_db.table("competitions").select("league_id").eq("name", name).execute()
             if retry.data:
                 return retry.data[0]["league_id"]
             # Try slug with numeric suffix
             import uuid as _uuid
             insert_data["slug"] = f"{slug}-{str(_uuid.uuid4())[:8]}"
-            fallback = ref_db.table("leagues").insert(insert_data).execute()
+            fallback = ref_db.table("competitions").insert(insert_data).execute()
             return fallback.data[0]["league_id"]
         raise
 
