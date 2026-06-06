@@ -18,7 +18,7 @@ def handle_parse_pdf():
 
     Accepts multipart/form-data with:
       - file:         PDF file (required)
-      - league_name:  Competition / league name (required)
+      - competition_name:  Competition / league name (required)
       - game_key:     Override game_key (optional — defaults to PDF_{game_no})
       - user_id:      User UUID for entity tracking (optional)
 
@@ -34,9 +34,12 @@ def handle_parse_pdf():
         if not pdf_file.filename or not pdf_file.filename.lower().endswith(".pdf"):
             return jsonify({"error": "Uploaded file must be a PDF"}), 400
 
-        league_name = request.form.get("league_name", "").strip()
+        league_name = (
+            request.form.get("competition_name", "").strip()
+            or request.form.get("league_name", "").strip()
+        )
         if not league_name:
-            return jsonify({"error": "league_name is required"}), 400
+            return jsonify({"error": "competition_name is required"}), 400
 
         game_key = request.form.get("game_key", "").strip() or None
         user_id = request.form.get("user_id", "").strip() or None
@@ -74,7 +77,11 @@ def handle_parse():
 
         file_path = data.get("file_path")
         user_id = data.get("user_id")
-        league_name = data.get("league_name", "").strip() or None
+        league_name = (
+            data.get("competition_name", "").strip()
+            or data.get("league_name", "").strip()
+            or None
+        )
 
         if not file_path or not user_id:
             log.warning("Missing file_path or user_id")
@@ -91,41 +98,60 @@ def handle_parse():
 
         if file_bytes and file_bytes[:4] == b"%PDF":
             log.info("PDF detected in /api/parse — routing to PDF parser: %s", file_path)
-            log.info("Using pdf_parser.py for /api/parse")
             result = parse_pdf(
                 pdf_file=io.BytesIO(file_bytes),
                 league_name=league_name or "Unknown",
                 user_id=user_id,
             )
+
             if "error" in result:
                 log.error("PDF parse error: %s", result["error"])
-                return jsonify(result), 500
+                return jsonify({"status": "error", **result}), 500
+
+            if result.get("skipped"):
+                report_type = result.get("report_type", "unknown")
+                msg = result.get("message", "PDF was skipped")
+                log.warning("PDF skipped — type=%s file=%s reason=%s", report_type, file_path, msg)
+                return jsonify({
+                    "status": "skipped",
+                    "report_type": report_type,
+                    "message": msg,
+                }), 200
+
+            report_type = result.get("report_type", "?")
+            counts = result.get("counts", {})
+            log.info(
+                "PDF parsed OK — type=%s game_key=%s counts=%s",
+                report_type, result.get("game_key"), counts,
+            )
             return jsonify({"status": "success", **result})
 
         log.info("Parsing Excel file for user=%s path=%s", user_id, file_path)
 
         try:
-            league_id = run_from_excel(file_path, user_id)
-            log.info("Excel parse complete: %s", file_path)
-            
-            if league_id:
-                log.info("Computing advanced team stats for league_id=%s", league_id)
-                try:
-                    team_rows = fetch_team_stats_for_league(league_id)
-                    if team_rows:
-                        log.info("Found %d team stat records for league %s", len(team_rows), league_id)
-                        processed = compute_team_advanced(team_rows)
-                        log.info("Computed advanced stats for %d teams", processed)
-                    else:
-                        log.warning("No team stats found for league_id %s", league_id)
-                except Exception as adv_err:
-                    log.error("Advanced stats calculation error: %s", adv_err, exc_info=True)
-            else:
-                log.warning("No league_id returned from Excel parser — advanced stats skipped")
-            
+            result = run_from_excel(file_path, user_id)
+            log.info("Excel parse complete: %s — %s", file_path, result)
+
+            league_id = result.get("league_id") if isinstance(result, dict) else result
+            processed = result.get("processed", 0) if isinstance(result, dict) else 0
+            skipped = result.get("skipped", 0) if isinstance(result, dict) else 0
+            errors = result.get("errors", 0) if isinstance(result, dict) else 0
+            total_rows = result.get("total_rows", 0) if isinstance(result, dict) else 0
+
+            if skipped > 0 and processed == 0:
+                log.warning(
+                    "All %d rows skipped (unchanged) — no new data written for %s",
+                    skipped, file_path,
+                )
+
             return jsonify({
                 "status": "success",
-                "message": f"Excel file {file_path} parsed and stored successfully"
+                "message": f"Excel file parsed: {processed} processed, {skipped} skipped (unchanged), {errors} errors out of {total_rows} rows",
+                "processed": processed,
+                "skipped": skipped,
+                "errors": errors,
+                "total_rows": total_rows,
+                "league_id": league_id,
             })
 
         except Exception as e:

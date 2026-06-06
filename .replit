@@ -75,7 +75,7 @@ outputType = "console"
 [userenv]
 
 [userenv.shared]
-ENABLE_OPENAI = "true"
+ENABLE_OPENAI = "false"
 
 [postMerge]
 path = "scripts/post-merge.sh"

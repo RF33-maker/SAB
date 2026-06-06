@@ -2,12 +2,9 @@ from openai import OpenAI
 from app.utils.chat_data import supabase
 from datetime import datetime
 
-client = OpenAI()
-
-print("📄 summary.py loaded")
-
 def generate_game_summary(game, players):
     try:
+        client = OpenAI()
         home = game['home_team']
         away = game['away_team']
         home_players = [p for p in players if p['team'] == home]
