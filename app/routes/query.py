@@ -20,9 +20,16 @@ from openai.types.chat import ChatCompletionMessageParam
 query_bp = Blueprint("query", __name__)
 CORS(query_bp, resources={r"/*": {"origins": "*"}})
 
-# OpenAI client and assistant creation
-client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-assistant_id = create_assistant(client)
+# Lazy-initialized OpenAI client and assistant — created on first request, not at import time
+_client = None
+_assistant_id = None
+
+def _get_openai():
+    global _client, _assistant_id
+    if _client is None:
+        _client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+        _assistant_id = create_assistant(_client)
+    return _client, _assistant_id
 
 # Rate limiter
 limiter = Limiter(
@@ -37,6 +44,7 @@ ai_summaries = {}
 @query_bp.route('/start', methods=['GET'])
 @limiter.limit("30 per minute")
 def start_conversation():
+    client, _ = _get_openai()
     thread = client.beta.threads.create()
     return jsonify({"thread_id": thread.id})
 
@@ -44,6 +52,7 @@ def start_conversation():
 @limiter.limit("10 per minute")
 def reset_thread():
     try:
+        client, _ = _get_openai()
         thread = client.beta.threads.create()
         return jsonify({
             "thread_id": thread.id,
@@ -70,6 +79,8 @@ def chat():
         player_name = data.get('player_name')
 
         logging.info(f"📦 RAG Chat Request: question='{user_input}', league_id={league_id}, player_name={player_name}")
+
+        client, assistant_id = _get_openai()
 
         # Create thread if not provided
         if not thread_id:
@@ -179,6 +190,8 @@ def chat_league():
             return jsonify({"error": "league_id is required"}), 400
 
         logging.info(f"📦 League RAG Chat: question='{user_input}', league_id={league_id}")
+
+        client, assistant_id = _get_openai()
 
         # Create thread if not provided
         if not thread_id:
@@ -290,7 +303,8 @@ You are a basketball coach writing a post-game report. Provide:
 3. A coaching tip or takeaway based on the data.
 """
 
-        result = openai.chat.completions.create(
+        client, _ = _get_openai()
+        result = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a basketball coach generating post-game summaries."},
@@ -302,4 +316,4 @@ You are a basketball coach writing a post-game report. Provide:
         return jsonify({"summary": result.choices[0].message.content})
 
     except Exception as e:
-        return jsonify({"summary": f"⚠️ Error generating summary: {str(e)}"}), 500
+        return jsonify({"summary": f"⚠️ Failed to generate summary: {str(e)}"}), 500
