@@ -105,27 +105,29 @@ def handle_parse():
         log.info("Parsing Excel file for user=%s path=%s", user_id, file_path)
 
         try:
-            league_id = run_from_excel(file_path, user_id)
-            log.info("Excel parse complete: %s", file_path)
-            
-            if league_id:
-                log.info("Computing advanced team stats for league_id=%s", league_id)
-                try:
-                    team_rows = fetch_team_stats_for_league(league_id)
-                    if team_rows:
-                        log.info("Found %d team stat records for league %s", len(team_rows), league_id)
-                        processed = compute_team_advanced(team_rows)
-                        log.info("Computed advanced stats for %d teams", processed)
-                    else:
-                        log.warning("No team stats found for league_id %s", league_id)
-                except Exception as adv_err:
-                    log.error("Advanced stats calculation error: %s", adv_err, exc_info=True)
-            else:
-                log.warning("No league_id returned from Excel parser — advanced stats skipped")
-            
+            result = run_from_excel(file_path, user_id)
+            log.info("Excel parse complete: %s — %s", file_path, result)
+
+            league_id = result.get("league_id") if isinstance(result, dict) else result
+            processed = result.get("processed", 0) if isinstance(result, dict) else 0
+            skipped = result.get("skipped", 0) if isinstance(result, dict) else 0
+            errors = result.get("errors", 0) if isinstance(result, dict) else 0
+            total_rows = result.get("total_rows", 0) if isinstance(result, dict) else 0
+
+            if skipped > 0 and processed == 0:
+                log.warning(
+                    "All %d rows skipped (unchanged) — no new data written for %s",
+                    skipped, file_path,
+                )
+
             return jsonify({
                 "status": "success",
-                "message": f"Excel file {file_path} parsed and stored successfully"
+                "message": f"Excel file parsed: {processed} processed, {skipped} skipped (unchanged), {errors} errors out of {total_rows} rows",
+                "processed": processed,
+                "skipped": skipped,
+                "errors": errors,
+                "total_rows": total_rows,
+                "league_id": league_id,
             })
 
         except Exception as e:
