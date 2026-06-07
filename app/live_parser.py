@@ -8,6 +8,7 @@ from app.utils.json_parser import (
     get_or_create_team,
     get_or_create_player,
     insert_supabase,
+    _coerce_empty,
     TEAM_FIELD_MAP,
     PLAYER_FIELD_MAP
 )
@@ -134,7 +135,7 @@ def process_game(game):
                 "status": "live"
             }
             for json_key, db_key in TEAM_FIELD_MAP.items():
-                team_record[db_key] = team.get(json_key)
+                team_record[db_key] = _coerce_empty(team.get(json_key))
             team_records.append(team_record)
 
         if team_records:
@@ -187,7 +188,7 @@ def process_game(game):
                     "status": "live"
                 }
                 for json_key, db_key in PLAYER_FIELD_MAP.items():
-                    player_record[db_key] = player.get(json_key)
+                    player_record[db_key] = _coerce_empty(player.get(json_key))
                 player_records.append(player_record)
 
         if player_records:
