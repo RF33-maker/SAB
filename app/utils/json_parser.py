@@ -9,6 +9,31 @@ from app.utils.compute_advanced_stats import compute_advanced_stats
 
 log = logging.getLogger("json_parser")
 
+# ----------------------------
+# Type-safety helpers
+# ----------------------------
+def _safe_int(v):
+    """Return int(v), or None for None / empty-string / non-numeric values."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return None
+
+def _safe_float(v):
+    """Return float(v), or None for None / empty-string / non-numeric values."""
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+def _coerce_empty(v):
+    """Convert empty strings to None; leave all other values untouched."""
+    return None if v == "" else v
+
 # ✅ Env variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -124,12 +149,6 @@ TEAM_FIELD_MAP = {
     "tot_sReboundsTeamOffensive": "tot_sreboundsteamoffensive",
     "tot_sTurnoversTeam": "tot_sturnovers_team",
     "tot_eff_1": "tot_eff_1",
-    "tot_eff_2": "tot_eff_2",
-    "tot_eff_3": "tot_eff_3",
-    "tot_eff_4": "tot_eff_4",
-    "tot_eff_5": "tot_eff_5",
-    "tot_eff_6": "tot_eff_6",
-    "tot_eff_7": "tot_eff_7",
     "p1_score": "p1_score",
     "p2_score": "p2_score",
     "p3_score": "p3_score",
@@ -173,17 +192,46 @@ PBP_FIELD_MAP = {
 def build_data_url(numeric_id: str) -> str:
     return f"https://fibalivestats.dcd.shared.geniussports.com/data/{numeric_id}/data.json"
 
+def _strip_col_from_error(error_msg: str):
+    """Extract missing column name from a PGRST204 error, or None."""
+    import re as _re
+    m = _re.search(r"Could not find the '(\w+)' column", str(error_msg))
+    return m.group(1) if m else None
+
+
+def _drop_col(records: list, col: str) -> list:
+    """Remove a key from every record dict."""
+    return [{k: v for k, v in r.items() if k != col} for r in records]
+
+
 def insert_supabase(table: str, records: list, conflict_keys: str):
-    """Insert game data records using game_db (respects DB_SCHEMA)."""
+    """Insert game data records using game_db (respects DB_SCHEMA).
+    Auto-strips columns that Supabase reports as unknown (PGRST204) and retries,
+    so schema drift never silently kills an entire upsert batch.
+    """
     if not records:
+        log.debug("insert_supabase: no records for %s — skipping", table)
         return
-    try:
-        game_db.table(table) \
-            .upsert(records, on_conflict=conflict_keys) \
-            .execute()
-        print(f"✅ Upserted {len(records)} into {DB_SCHEMA}.{table}")
-    except Exception as e:
-        print(f"❌ Supabase upsert failed for {table}: {e}")
+    for attempt in range(20):
+        try:
+            game_db.table(table) \
+                .upsert(records, on_conflict=conflict_keys) \
+                .execute()
+            print(f"✅ Upserted {len(records)} into {DB_SCHEMA}.{table}")
+            return
+        except Exception as e:
+            err_str = str(e)
+            if "PGRST204" in err_str:
+                col = _strip_col_from_error(err_str)
+                if col:
+                    log.warning("⚠️  %s.%s missing column '%s' — stripping and retrying",
+                                DB_SCHEMA, table, col)
+                    records = _drop_col(records, col)
+                    continue
+            log.error("❌ Supabase upsert FAILED for %s.%s (%d records): %s",
+                      DB_SCHEMA, table, len(records), e, exc_info=True)
+            raise
+    raise RuntimeError(f"insert_supabase: too many retries for {DB_SCHEMA}.{table}")
 
 # ----------------------------
 # Team Name Normalization
@@ -462,7 +510,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             "identifier_duplicate": f"{numeric_id}_{team_id}_{side}"
         }
         for json_key, db_key in TEAM_FIELD_MAP.items():
-            team_record[db_key] = team.get(json_key)
+            team_record[db_key] = _coerce_empty(team.get(json_key))
         lds = team.get("lds")
         if lds:
             team_record["game_leaders_json"] = lds
@@ -500,7 +548,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                         "identifier_duplicate": f"{numeric_id}_{player_id}"
                     }
                     for json_key, db_key in PLAYER_FIELD_MAP.items():
-                        player_record[db_key] = player.get(json_key)
+                        player_record[db_key] = _coerce_empty(player.get(json_key))
                     player_records.append(player_record)
                 except Exception as e:
                     player_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip() or f"Player {pid}"
@@ -671,15 +719,15 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 "team_id": team_id,
                 "player_id": player_id,
                 "action_number": action_num,
-                "period": e.get("period"),
+                "period": _safe_int(e.get("period")),
                 "clock": e.get("clock"),
                 "player_name": player_name,
-                "team_no": tno,
+                "team_no": _safe_int(tno),
                 "action_type": e.get("actionType"),
                 "sub_type": e.get("subType"),
                 "qualifiers": qualifiers if qualifiers else None,
-                "success": e.get("success"),
-                "scoring": e.get("scoring"),
+                "success": _coerce_empty(e.get("success")),
+                "scoring": _coerce_empty(e.get("scoring")),
                 "points": None,
                 "score": score,
                 "x_coord": None,
@@ -687,8 +735,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 "description": None,
                 "shirt_number": str(e.get("shirtNumber")) if e.get("shirtNumber") is not None else None,
                 "pno": _pno,
-                "period_type": e.get("periodType"),
-                "previous_action": e.get("previousAction"),
+                "period_type": _coerce_empty(e.get("periodType")),
+                "previous_action": _safe_int(e.get("previousAction")),
                 "team_score": _team_score,
                 "opp_score": _opp_score,
             }
@@ -730,7 +778,10 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: str, livestats_url: str, pool: str = None) -> bool:
     """
     Check if a game exists in game_schedule and if any key data has changed.
-    Returns True if game is new or has changed, False if unchanged.
+    Also returns True if team_stats are missing for the game, so that games
+    uploaded before their LiveStats data was available get reprocessed on the
+    next upload once the match has been played.
+    Returns True if game is new, changed, or missing team_stats; False if fully up-to-date.
     """
     try:
         result = game_db.table("game_schedule").select(
@@ -764,7 +815,18 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
         if (existing_pool or pool) and existing_pool != pool:
             return True
         
-        # No changes detected
+        # Schedule is unchanged — but check if team_stats are missing.
+        # A game uploaded before it was played has a schedule row but no stats;
+        # once the match is played we must reprocess it to populate team_stats.
+        try:
+            stats_result = game_db.table("team_stats").select("id").eq("game_key", game_key).limit(1).execute()
+            if not stats_result.data:
+                print(f"   🔄 {game_key}: schedule unchanged but team_stats missing — reprocessing")
+                return True
+        except Exception as stats_err:
+            log.warning("Could not check team_stats for %s: %s", game_key, stats_err)
+        
+        # Fully up-to-date
         return False
         
     except Exception as e:
