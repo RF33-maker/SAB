@@ -201,6 +201,7 @@ def build_data_url(numeric_id: str) -> str:
 def insert_supabase(table: str, records: list, conflict_keys: str):
     """Insert game data records using game_db (respects DB_SCHEMA)."""
     if not records:
+        log.debug("insert_supabase: no records for %s — skipping", table)
         return
     try:
         game_db.table(table) \
@@ -208,7 +209,10 @@ def insert_supabase(table: str, records: list, conflict_keys: str):
             .execute()
         print(f"✅ Upserted {len(records)} into {DB_SCHEMA}.{table}")
     except Exception as e:
-        print(f"❌ Supabase upsert failed for {table}: {e}")
+        # Log at ERROR level so it surfaces in Render logs even with WARNING log level
+        log.error("❌ Supabase upsert FAILED for %s.%s (%d records): %s",
+                  DB_SCHEMA, table, len(records), e, exc_info=True)
+        raise  # Re-raise so the caller (parse_and_store_game) knows and counts it as an error
 
 # ----------------------------
 # Team Name Normalization
@@ -755,7 +759,10 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: str, livestats_url: str, pool: str = None) -> bool:
     """
     Check if a game exists in game_schedule and if any key data has changed.
-    Returns True if game is new or has changed, False if unchanged.
+    Also returns True if team_stats are missing for the game, so that games
+    uploaded before their LiveStats data was available get reprocessed on the
+    next upload once the match has been played.
+    Returns True if game is new, changed, or missing team_stats; False if fully up-to-date.
     """
     try:
         result = game_db.table("game_schedule").select(
@@ -789,7 +796,18 @@ def has_game_changed(game_key: str, game_date: str, home_team: str, away_team: s
         if (existing_pool or pool) and existing_pool != pool:
             return True
         
-        # No changes detected
+        # Schedule is unchanged — but check if team_stats are missing.
+        # A game uploaded before it was played has a schedule row but no stats;
+        # once the match is played we must reprocess it to populate team_stats.
+        try:
+            stats_result = game_db.table("team_stats").select("id").eq("game_key", game_key).limit(1).execute()
+            if not stats_result.data:
+                print(f"   🔄 {game_key}: schedule unchanged but team_stats missing — reprocessing")
+                return True
+        except Exception as stats_err:
+            log.warning("Could not check team_stats for %s: %s", game_key, stats_err)
+        
+        # Fully up-to-date
         return False
         
     except Exception as e:
