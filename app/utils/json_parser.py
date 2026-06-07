@@ -198,21 +198,46 @@ PBP_FIELD_MAP = {
 def build_data_url(numeric_id: str) -> str:
     return f"https://fibalivestats.dcd.shared.geniussports.com/data/{numeric_id}/data.json"
 
+def _strip_col_from_error(error_msg: str):
+    """Extract missing column name from a PGRST204 error, or None."""
+    import re as _re
+    m = _re.search(r"Could not find the '(\w+)' column", str(error_msg))
+    return m.group(1) if m else None
+
+
+def _drop_col(records: list, col: str) -> list:
+    """Remove a key from every record dict."""
+    return [{k: v for k, v in r.items() if k != col} for r in records]
+
+
 def insert_supabase(table: str, records: list, conflict_keys: str):
-    """Insert game data records using game_db (respects DB_SCHEMA)."""
+    """Insert game data records using game_db (respects DB_SCHEMA).
+    Auto-strips columns that Supabase reports as unknown (PGRST204) and retries,
+    so schema drift never silently kills an entire upsert batch.
+    """
     if not records:
         log.debug("insert_supabase: no records for %s — skipping", table)
         return
-    try:
-        game_db.table(table) \
-            .upsert(records, on_conflict=conflict_keys) \
-            .execute()
-        print(f"✅ Upserted {len(records)} into {DB_SCHEMA}.{table}")
-    except Exception as e:
-        # Log at ERROR level so it surfaces in Render logs even with WARNING log level
-        log.error("❌ Supabase upsert FAILED for %s.%s (%d records): %s",
-                  DB_SCHEMA, table, len(records), e, exc_info=True)
-        raise  # Re-raise so the caller (parse_and_store_game) knows and counts it as an error
+    for attempt in range(20):
+        try:
+            game_db.table(table) \
+                .upsert(records, on_conflict=conflict_keys) \
+                .execute()
+            print(f"✅ Upserted {len(records)} into {DB_SCHEMA}.{table}")
+            return
+        except Exception as e:
+            err_str = str(e)
+            if "PGRST204" in err_str:
+                col = _strip_col_from_error(err_str)
+                if col:
+                    log.warning("⚠️  %s.%s missing column '%s' — stripping and retrying",
+                                DB_SCHEMA, table, col)
+                    records = _drop_col(records, col)
+                    continue
+            log.error("❌ Supabase upsert FAILED for %s.%s (%d records): %s",
+                      DB_SCHEMA, table, len(records), e, exc_info=True)
+            raise
+    raise RuntimeError(f"insert_supabase: too many retries for {DB_SCHEMA}.{table}")
 
 # ----------------------------
 # Team Name Normalization
