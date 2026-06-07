@@ -9,6 +9,31 @@ from app.utils.compute_advanced_stats import compute_advanced_stats
 
 log = logging.getLogger("json_parser")
 
+# ----------------------------
+# Type-safety helpers
+# ----------------------------
+def _safe_int(v):
+    """Return int(v), or None for None / empty-string / non-numeric values."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return None
+
+def _safe_float(v):
+    """Return float(v), or None for None / empty-string / non-numeric values."""
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+def _coerce_empty(v):
+    """Convert empty strings to None; leave all other values untouched."""
+    return None if v == "" else v
+
 # ✅ Env variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -462,7 +487,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             "identifier_duplicate": f"{numeric_id}_{team_id}_{side}"
         }
         for json_key, db_key in TEAM_FIELD_MAP.items():
-            team_record[db_key] = team.get(json_key)
+            team_record[db_key] = _coerce_empty(team.get(json_key))
         lds = team.get("lds")
         if lds:
             team_record["game_leaders_json"] = lds
@@ -500,7 +525,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                         "identifier_duplicate": f"{numeric_id}_{player_id}"
                     }
                     for json_key, db_key in PLAYER_FIELD_MAP.items():
-                        player_record[db_key] = player.get(json_key)
+                        player_record[db_key] = _coerce_empty(player.get(json_key))
                     player_records.append(player_record)
                 except Exception as e:
                     player_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip() or f"Player {pid}"
@@ -671,10 +696,10 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 "team_id": team_id,
                 "player_id": player_id,
                 "action_number": action_num,
-                "period": e.get("period"),
+                "period": _safe_int(e.get("period")),
                 "clock": e.get("clock"),
                 "player_name": player_name,
-                "team_no": tno,
+                "team_no": _safe_int(tno),
                 "action_type": e.get("actionType"),
                 "sub_type": e.get("subType"),
                 "qualifiers": qualifiers if qualifiers else None,
@@ -687,8 +712,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                 "description": None,
                 "shirt_number": str(e.get("shirtNumber")) if e.get("shirtNumber") is not None else None,
                 "pno": _pno,
-                "period_type": e.get("periodType"),
-                "previous_action": e.get("previousAction"),
+                "period_type": _coerce_empty(e.get("periodType")),
+                "previous_action": _safe_int(e.get("previousAction")),
                 "team_score": _team_score,
                 "opp_score": _opp_score,
             }
