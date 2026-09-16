@@ -331,12 +331,50 @@ def _slugify(text: str) -> str:
     return slug or "league"
 
 
-def get_or_create_league(name: str, user_id: str = None):
+def _escape_ilike(value: str) -> str:
+    """Escape %, _ and \\ so a name can be used safely inside an ilike pattern."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _find_league_id(name: str, slug: str):
+    """
+    Look up an existing league by, in order:
+      1. Exact name match (fast path — matches how rows are normally created)
+      2. Case-insensitive / trimmed name match (catches "Finals" vs "FINALS")
+      3. Slug match (catches punctuation/whitespace differences that still
+         normalize to the same slug)
+
+    Returns the league_id if any strategy finds a row, else None.
+    """
     res = ref_db.table("competitions").select("league_id").eq("name", name).execute()
     if res.data:
         return res.data[0]["league_id"]
 
+    res = (
+        ref_db.table("competitions")
+        .select("league_id")
+        .ilike("name", _escape_ilike(name.strip()))
+        .limit(1)
+        .execute()
+    )
+    if res.data:
+        return res.data[0]["league_id"]
+
+    res = ref_db.table("competitions").select("league_id").eq("slug", slug).limit(1).execute()
+    if res.data:
+        return res.data[0]["league_id"]
+
+    return None
+
+
+def get_or_create_league(name: str, user_id: str = None):
+    name = name.strip()
     slug = _slugify(name)
+
+    existing_id = _find_league_id(name, slug)
+    if existing_id:
+        return existing_id
+
     insert_data = {"name": name, "slug": slug}
     if user_id:
         insert_data["created_by"] = user_id
@@ -348,10 +386,11 @@ def get_or_create_league(name: str, user_id: str = None):
         # Slug collision (23505) — slug already taken. Try appending a short suffix.
         err_str = str(e)
         if "23505" in err_str or "duplicate key" in err_str.lower():
-            # Re-check by name first (race condition)
-            retry = ref_db.table("competitions").select("league_id").eq("name", name).execute()
-            if retry.data:
-                return retry.data[0]["league_id"]
+            # Re-check first (race condition — another request created it
+            # between our lookup above and this insert)
+            existing_id = _find_league_id(name, slug)
+            if existing_id:
+                return existing_id
             # Try slug with numeric suffix
             import uuid as _uuid
             insert_data["slug"] = f"{slug}-{str(_uuid.uuid4())[:8]}"
@@ -427,11 +466,15 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
 # Game Parser
 # ----------------------------
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None, league_id: str = None):
     print(f"🔍 Processing game {numeric_id}")
 
     # --- Ensure league ---
-    league_id = get_or_create_league(league_name, user_id)
+    # If the caller already knows the league_id (e.g. the game was
+    # pre-populated in game_schedule with one), use it directly instead of
+    # re-resolving by name — this is the authoritative case, no lookup needed.
+    if not league_id:
+        league_id = get_or_create_league(league_name, user_id)
 
     # --- Ensure teams ---
     if home_team_name:
@@ -768,6 +811,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         build_lineups_for_game(game_key=game_key, league_id=league_id)
     except Exception as e:
         log.warning("Lineup builder failed for game %s (non-fatal): %s", game_key, e)
+
+    return league_id
 
 # ----------------------------
 # Change Detection Helper

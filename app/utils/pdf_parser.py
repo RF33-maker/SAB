@@ -32,6 +32,7 @@ from app.utils.json_parser import (
     get_or_create_player,
     normalize_team_name,
 )
+from app.utils.compute_advanced_stats import compute_advanced_stats
 
 log = logging.getLogger("pdf_parser")
 
@@ -1912,6 +1913,15 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
 
             elif report_type == "rotations":
                 counts = _parse_rotations(pdf, meta, league_id)
+
+            # Box scores are what feed possessions/efg/ratings — recompute advanced
+            # stats for the league as soon as one lands, so metrics are ready
+            # without a manual backfill run.
+            if report_type == "box_score" and league_id:
+                try:
+                    compute_advanced_stats(league_id)
+                except Exception as e:
+                    log.error("Error computing advanced stats for league=%s: %s", league_id, e, exc_info=True)
 
             return {
                 "skipped": False,

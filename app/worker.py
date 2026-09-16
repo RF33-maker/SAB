@@ -41,6 +41,7 @@ from supabase import create_client
 from supabase.lib.client_options import ClientOptions
 
 from app.utils.json_parser import parse_and_store_game
+from app.utils.compute_advanced_stats import compute_advanced_stats
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(
@@ -456,7 +457,7 @@ def poll_game(game: dict):
         
         try:
             t_parse = perf_counter()
-            parse_and_store_game(
+            parsed_league_id = parse_and_store_game(
                 numeric_id=numeric_id,
                 league_name=game.get("competitionname", "Unknown League"),
                 game_date=matchtime,
@@ -464,15 +465,28 @@ def poll_game(game: dict):
                 away_team_name=game.get("awayteam"),
                 game_key=game_key,
                 livestats_url=livestats_url,
+                league_id=game.get("league_id"),
             )
             parse_ms = round((perf_counter() - t_parse) * 1000, 1)
             log.info("%s: parse complete in %.1fms (pbp_total=%s)", game_key, parse_ms, metrics.get("pbp_total", "n/a"))
-            
+
             if parse_reason == "final":
                 game_db.table("game_schedule").update({
                     "parsed_at": now_iso,
                 }).eq("game_key", game_key).execute()
-            
+
+                # Game is final and stats are stored — recompute advanced
+                # metrics for the league now instead of requiring a manual
+                # backfill run. parsed_league_id is None if stats weren't
+                # actually available yet (game marked final before the box
+                # score was ready), so skip in that case.
+                if parsed_league_id:
+                    try:
+                        log.info("%s: computing advanced stats (league=%s)", game_key, parsed_league_id)
+                        compute_advanced_stats(parsed_league_id)
+                    except Exception as e:
+                        log.error("%s: advanced stats computation failed: %s", game_key, e)
+
         except Exception as e:
             log.error("%s: parse failed: %s", game_key, e)
             game_db.table("game_schedule").update({
