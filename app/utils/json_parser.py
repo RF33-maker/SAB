@@ -336,7 +336,7 @@ def _escape_ilike(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _find_league_id(name: str, slug: str):
+def _find_league_id(name: str, slug: str, organisation: str = None, team_names: list = None):
     """
     Look up an existing league by, in order:
       1. Exact name match (fast path — matches how rows are normally created)
@@ -345,7 +345,8 @@ def _find_league_id(name: str, slug: str):
          normalize to the same slug)
       4. Fuzzy season match (catches "NBL Division One 26-27" matching an
          existing "NBL Division One 2026-27" — same league name and season
-         year, just formatted differently)
+         year, just formatted differently — corroborated with organisation
+         and team names where available; see _find_league_id_fuzzy_season)
 
     Returns the league_id if any strategy finds a row, else None.
     """
@@ -367,20 +368,22 @@ def _find_league_id(name: str, slug: str):
     if res.data:
         return res.data[0]["league_id"]
 
-    return _find_league_id_fuzzy_season(name)
+    return _find_league_id_fuzzy_season(name, organisation=organisation, team_names=team_names)
 
 
-def get_or_create_league(name: str, user_id: str = None):
+def get_or_create_league(name: str, user_id: str = None, organisation: str = None, team_names: list = None):
     name = name.strip()
     slug = _slugify(name)
 
-    existing_id = _find_league_id(name, slug)
+    existing_id = _find_league_id(name, slug, organisation=organisation, team_names=team_names)
     if existing_id:
         return existing_id
 
     insert_data = {"name": name, "slug": slug}
     if user_id:
         insert_data["created_by"] = user_id
+    if organisation:
+        insert_data["organisation"] = organisation
 
     try:
         new = ref_db.table("competitions").insert(insert_data).execute()
@@ -391,7 +394,7 @@ def get_or_create_league(name: str, user_id: str = None):
         if "23505" in err_str or "duplicate key" in err_str.lower():
             # Re-check first (race condition — another request created it
             # between our lookup above and this insert)
-            existing_id = _find_league_id(name, slug)
+            existing_id = _find_league_id(name, slug, organisation=organisation, team_names=team_names)
             if existing_id:
                 return existing_id
             # Try slug with numeric suffix
@@ -432,7 +435,7 @@ def _parse_season_start_year(name: str):
     return start_num
 
 
-def _find_league_id_fuzzy_season(name: str, exclude_league_id: str = None):
+def _find_league_id_fuzzy_season(name: str, exclude_league_id: str = None, organisation: str = None, team_names: list = None):
     """
     Last-resort match for a competition whose name represents the same
     league and season as `name`, just formatted differently — e.g. 'NBL
@@ -440,19 +443,51 @@ def _find_league_id_fuzzy_season(name: str, exclude_league_id: str = None):
     (base name, season start year) rather than the raw string, so it only
     matches when both the league name AND the year genuinely agree — two
     different seasons of the same league still get separate rows.
+
+    Since a name+year match alone is still a heuristic, corroborate with
+    whatever else is available before trusting it:
+      - organisation (e.g. "Basketball England"), when both sides have one —
+        a mismatch here rules the candidate out even if the name+year agree.
+      - team_names — if we know the teams playing, an existing competition
+        that already has at least one of them under it is strong evidence
+        it's genuinely the same league, not a coincidental name collision.
+    Both checks are skippable when the data simply isn't available (never
+    treat "unknown" as a mismatch), but when a signal IS present on both
+    sides, it must agree.
     """
     base_name = _strip_season(name).lower()
     start_year = _parse_season_start_year(name)
     if not base_name or start_year is None:
         return None
-    res = ref_db.table("competitions").select("league_id,name").execute()
-    for row in res.data or []:
-        if row["league_id"] == exclude_league_id:
-            continue
-        if _strip_season(row["name"]).lower() != base_name:
-            continue
-        if _parse_season_start_year(row["name"]) == start_year:
-            return row["league_id"]
+
+    res = ref_db.table("competitions").select("league_id,name,organisation").execute()
+    candidates = [
+        row for row in (res.data or [])
+        if row["league_id"] != exclude_league_id
+        and _strip_season(row["name"]).lower() == base_name
+        and _parse_season_start_year(row["name"]) == start_year
+    ]
+    if not candidates:
+        return None
+
+    org_normalized = organisation.strip().lower() if organisation else None
+    team_names_normalized = {
+        normalize_team_name(t).lower() for t in (team_names or []) if t
+    }
+
+    for candidate in candidates:
+        candidate_org = (candidate.get("organisation") or "").strip().lower() or None
+        if org_normalized and candidate_org and candidate_org != org_normalized:
+            continue  # organisation present on both sides and disagrees — reject
+
+        if team_names_normalized:
+            existing = ref_db.table("teams").select("name").eq("league_id", candidate["league_id"]).execute()
+            existing_names = {normalize_team_name(t["name"]).lower() for t in (existing.data or [])}
+            if existing_names and not (existing_names & team_names_normalized):
+                continue  # this candidate has teams on record, none of which match — reject
+
+        return candidate["league_id"]
+
     return None
 
 
@@ -571,7 +606,11 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # pre-populated in game_schedule with one), use it directly instead of
     # re-resolving by name — this is the authoritative case, no lookup needed.
     if not league_id:
-        league_id = get_or_create_league(league_name, user_id)
+        league_id = get_or_create_league(
+            league_name, user_id,
+            organisation=organisation,
+            team_names=[home_team_name, away_team_name],
+        )
 
     # Backfill organisation (e.g. "Basketball England") if we have one and
     # the competition doesn't yet — display metadata only, never used for
@@ -1020,10 +1059,22 @@ def run_from_excel(path: str, user_id: str = None):
 
     print(f"📊 Loaded {len(df)} rows from Excel")
 
-    required_cols = ["Competition Name", "Match Time", "Home Team", "Away Team", "LiveStats URL"]
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"❌ Excel file must have a column named '{col}'.")
+    # Different fixture exports name these columns differently (e.g. "Team 1"/
+    # "Team 2"/"Match URL" vs "Home Team"/"Away Team"/"LiveStats URL") — accept
+    # either so a file doesn't need renaming before upload.
+    column_aliases = {
+        "Competition Name": ["Competition Name"],
+        "Match Time": ["Match Time"],
+        "Home Team": ["Home Team", "Team 1"],
+        "Away Team": ["Away Team", "Team 2"],
+        "LiveStats URL": ["LiveStats URL", "Match URL"],
+    }
+    resolved_cols = {}
+    for canonical, aliases in column_aliases.items():
+        match = next((a for a in aliases if a in df.columns), None)
+        if not match:
+            raise ValueError(f"❌ Excel file must have a column named '{canonical}' (or one of: {', '.join(aliases)}).")
+        resolved_cols[canonical] = match
 
     # Track processing stats
     skipped_count = 0
@@ -1037,12 +1088,26 @@ def run_from_excel(path: str, user_id: str = None):
                 return ""
             return str(val)
         
-        league_name = safe_str(row["Competition Name"])
-        
+        league_name = safe_str(row[resolved_cols["Competition Name"]])
+
+        # Optional: League Name column (e.g. "Basketball England") — display
+        # metadata only, never used to decide which competition a row belongs to.
+        organisation = None
+        if "League Name" in df.columns:
+            org_val = safe_str(row["League Name"])
+            organisation = org_val if org_val and org_val != "nan" else None
+
+        home_team_name = safe_str(row[resolved_cols["Home Team"]])
+        away_team_name = safe_str(row[resolved_cols["Away Team"]])
+
         # Capture league_id from first row for advanced stats processing
         if league_id_to_return is None and league_name:
-            league_id_to_return = get_or_create_league(league_name, user_id)
-        
+            league_id_to_return = get_or_create_league(
+                league_name, user_id,
+                organisation=organisation,
+                team_names=[home_team_name, away_team_name],
+            )
+
         from datetime import datetime
 
         def normalize_matchtime(value):
@@ -1066,12 +1131,8 @@ def run_from_excel(path: str, user_id: str = None):
 
 
             # Replace the old section with this:
-        game_date = normalize_matchtime(row["Match Time"])
+        game_date = normalize_matchtime(row[resolved_cols["Match Time"]])
 
-            
-        home_team_name = safe_str(row["Home Team"])
-        away_team_name = safe_str(row["Away Team"])
-        
         # Handle Game Key - use existing value or auto-generate if missing/empty
         game_key = safe_str(row.get("Game Key", "")) if "Game Key" in df.columns else ""
         if not game_key or game_key == "nan":
@@ -1081,12 +1142,13 @@ def run_from_excel(path: str, user_id: str = None):
             game_key = f"{date_part}_{home_safe}_vs_{away_safe}"
             print(f"   🔑 Auto-generated game_key: {game_key}")
         
-        url = safe_str(row["LiveStats URL"])
+        url = safe_str(row[resolved_cols["LiveStats URL"]])
         
         # Optional: Pool column (for leagues with multiple pools like NBL Division 1)
         pool = None
-        if "Pool" in df.columns:
-            pool_val = safe_str(row["Pool"])
+        pool_col = next((c for c in ("Pool", "Pool Number") if c in df.columns), None)
+        if pool_col:
+            pool_val = safe_str(row[pool_col])
             pool = pool_val if pool_val and pool_val != "nan" else None
 
         if not url or url == "nan":
@@ -1115,7 +1177,9 @@ def run_from_excel(path: str, user_id: str = None):
                 game_key=game_key,
                 livestats_url=url,
                 user_id=user_id,
-                pool=pool
+                pool=pool,
+                league_id=league_id_to_return,
+                organisation=organisation,
             )
             processed_count += 1
         except Exception as e:
