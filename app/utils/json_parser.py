@@ -343,6 +343,9 @@ def _find_league_id(name: str, slug: str):
       2. Case-insensitive / trimmed name match (catches "Finals" vs "FINALS")
       3. Slug match (catches punctuation/whitespace differences that still
          normalize to the same slug)
+      4. Fuzzy season match (catches "NBL Division One 26-27" matching an
+         existing "NBL Division One 2026-27" — same league name and season
+         year, just formatted differently)
 
     Returns the league_id if any strategy finds a row, else None.
     """
@@ -364,7 +367,7 @@ def _find_league_id(name: str, slug: str):
     if res.data:
         return res.data[0]["league_id"]
 
-    return None
+    return _find_league_id_fuzzy_season(name)
 
 
 def get_or_create_league(name: str, user_id: str = None):
@@ -399,12 +402,58 @@ def get_or_create_league(name: str, user_id: str = None):
         raise
 
 def _strip_season(name: str) -> str:
-    """Strip a trailing season/year (e.g. '2026-27', '2025/2026', '2026') from
-    a competition name, so 'WNBL Division One 2026-27' and 'WNBL Division One
-    2025-26' both normalize to 'WNBL Division One' for cross-season matching."""
+    """Strip a trailing season/year (e.g. '2026-27', '26-27', '2025/2026',
+    '2026') from a competition name, so 'WNBL Division One 2026-27' and
+    'WNBL Division One 2025-26' both normalize to 'WNBL Division One' for
+    cross-season matching. Handles a 2-digit start year ('26-27') as well as
+    4-digit, since names aren't always formatted consistently."""
     import re
-    stripped = re.sub(r"\s*(?:\d{4}\s*[/–-]\s*\d{2,4}|\d{4})\s*$", "", name or "").strip()
+    stripped = re.sub(r"\s*(?:\d{2,4}\s*[/–-]\s*\d{2,4}|\d{4})\s*$", "", name or "").strip()
     return stripped or (name or "").strip()
+
+
+def _parse_season_start_year(name: str):
+    """
+    Extract a competition's season start year from its name, handling the
+    formats actually used across leagues: '2026-27', '2026-2027', '2025/26',
+    or a 2-digit start year like '26-27'. A 2-digit start year is assumed to
+    be 20xx. Returns None if no trailing year/season pattern is found.
+    """
+    import re
+    match = re.search(r"(\d{2,4})\s*[/–-]\s*\d{2,4}\s*$", name or "")
+    if not match:
+        match = re.search(r"(\d{4})\s*$", name or "")
+    if not match:
+        return None
+    start = match.group(1)
+    start_num = int(start)
+    if len(start) == 2:
+        start_num += 2000
+    return start_num
+
+
+def _find_league_id_fuzzy_season(name: str, exclude_league_id: str = None):
+    """
+    Last-resort match for a competition whose name represents the same
+    league and season as `name`, just formatted differently — e.g. 'NBL
+    Division One 26-27' vs an existing 'NBL Division One 2026-27'. Compares
+    (base name, season start year) rather than the raw string, so it only
+    matches when both the league name AND the year genuinely agree — two
+    different seasons of the same league still get separate rows.
+    """
+    base_name = _strip_season(name).lower()
+    start_year = _parse_season_start_year(name)
+    if not base_name or start_year is None:
+        return None
+    res = ref_db.table("competitions").select("league_id,name").execute()
+    for row in res.data or []:
+        if row["league_id"] == exclude_league_id:
+            continue
+        if _strip_season(row["name"]).lower() != base_name:
+            continue
+        if _parse_season_start_year(row["name"]) == start_year:
+            return row["league_id"]
+    return None
 
 
 def find_sibling_league_ids(league_id: str, league_name: str) -> list:
