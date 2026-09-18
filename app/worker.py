@@ -107,7 +107,7 @@ def get_due_games():
     window_start = (now - timedelta(hours=12)).isoformat()
     window_end = (now + timedelta(hours=36)).isoformat()
     
-    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, status, poll_fail_count, parsed_at, last_polled_at, poll_count, total_poll_bytes'
+    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, organisation, status, poll_fail_count, parsed_at, last_polled_at, poll_count, total_poll_bytes'
     
     games_by_key = {}
     
@@ -466,6 +466,7 @@ def poll_game(game: dict):
                 game_key=game_key,
                 livestats_url=livestats_url,
                 league_id=game.get("league_id"),
+                organisation=game.get("organisation"),
             )
             parse_ms = round((perf_counter() - t_parse) * 1000, 1)
             log.info("%s: parse complete in %.1fms (pbp_total=%s)", game_key, parse_ms, metrics.get("pbp_total", "n/a"))
