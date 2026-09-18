@@ -398,11 +398,59 @@ def get_or_create_league(name: str, user_id: str = None):
             return fallback.data[0]["league_id"]
         raise
 
-def get_or_create_team(league_id: str, name: str, user_id: str = None):
+def _strip_season(name: str) -> str:
+    """Strip a trailing season/year (e.g. '2026-27', '2025/2026', '2026') from
+    a competition name, so 'WNBL Division One 2026-27' and 'WNBL Division One
+    2025-26' both normalize to 'WNBL Division One' for cross-season matching."""
+    import re
+    stripped = re.sub(r"\s*(?:\d{4}\s*[/–-]\s*\d{2,4}|\d{4})\s*$", "", name or "").strip()
+    return stripped or (name or "").strip()
+
+
+def find_sibling_league_ids(league_id: str, league_name: str) -> list:
+    """
+    Find league_ids of other competitions that are the same league in a
+    different season — matched by comparing competition names with the
+    trailing season/year stripped (e.g. "WNBL Division One 2026-27" and
+    "WNBL Division One 2025-26" both reduce to "WNBL Division One").
+
+    Deliberately does NOT use competitions.competition_id for this — that
+    field groups much more loosely (e.g. every REBA Summer League age-group
+    and stop shares one competition_id despite having entirely separate team
+    pools), so using it here would risk matching unrelated teams together.
+    """
+    base_name = _strip_season(league_name).lower()
+    if not base_name:
+        return []
+    res = ref_db.table("competitions").select("league_id,name").execute()
+    return [
+        row["league_id"]
+        for row in (res.data or [])
+        if row["league_id"] != league_id and _strip_season(row["name"]).lower() == base_name
+    ]
+
+
+def get_or_create_team(league_id: str, name: str, user_id: str = None, sibling_league_ids: list = None):
     normalized_name = normalize_team_name(name)
-    res = ref_db.table("teams").select("team_id").eq("league_id", league_id).eq("name", normalized_name).execute()
+    search_ids = [league_id] + [lid for lid in (sibling_league_ids or []) if lid != league_id]
+
+    query = ref_db.table("teams").select("team_id,league_id,created_at").eq("name", normalized_name)
+    query = query.in_("league_id", search_ids) if len(search_ids) > 1 else query.eq("league_id", search_ids[0])
+    res = query.order("created_at").execute()
+
     if res.data:
-        return res.data[0]["team_id"]
+        same_competition = next((r for r in res.data if r["league_id"] == league_id), None)
+        if same_competition:
+            return same_competition["team_id"]
+        # Found under a sibling season — reuse the same team_id and move it
+        # forward to this competition, so the current season's Teams tab
+        # (which filters teams by league_id) picks it up. Historical
+        # game/stat rows for the old season are unaffected — they carry
+        # their own team name and this same stable team_id.
+        matched = res.data[0]
+        ref_db.table("teams").update({"league_id": league_id}).eq("team_id", matched["team_id"]).execute()
+        return matched["team_id"]
+
     new = ref_db.table("teams").insert({"league_id": league_id, "name": normalized_name}).execute()
     return new.data[0]["team_id"]
 
@@ -466,7 +514,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
 # Game Parser
 # ----------------------------
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None, league_id: str = None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None, league_id: str = None, organisation: str = None):
     print(f"🔍 Processing game {numeric_id}")
 
     # --- Ensure league ---
@@ -476,13 +524,29 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     if not league_id:
         league_id = get_or_create_league(league_name, user_id)
 
+    # Backfill organisation (e.g. "Basketball England") if we have one and
+    # the competition doesn't yet — display metadata only, never used for
+    # team matching (see find_sibling_league_ids).
+    if organisation:
+        try:
+            existing = ref_db.table("competitions").select("organisation").eq("league_id", league_id).maybe_single().execute()
+            if existing.data and not existing.data.get("organisation"):
+                ref_db.table("competitions").update({"organisation": organisation}).eq("league_id", league_id).execute()
+        except Exception as _org_exc:
+            print(f"⚠️  Could not backfill organisation for league {league_id}: {_org_exc}")
+
+    # Teams belonging to this same league in a different season share one
+    # stable team_id — found by comparing competition names with the season
+    # stripped (see find_sibling_league_ids for why competition_id isn't used).
+    sibling_league_ids = find_sibling_league_ids(league_id, league_name)
+
     # --- Ensure teams ---
     if home_team_name:
-        home_team_id = get_or_create_team(league_id, home_team_name, user_id)
+        home_team_id = get_or_create_team(league_id, home_team_name, user_id, sibling_league_ids)
     else:
         home_team_id = None
     if away_team_name:
-        away_team_id = get_or_create_team(league_id, away_team_name, user_id)
+        away_team_id = get_or_create_team(league_id, away_team_name, user_id, sibling_league_ids)
     else:
         away_team_id = None
 
@@ -501,6 +565,8 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # Add pool if present (for leagues with pools like NBL Division 1)
     if pool is not None:
         game_record["pool"] = pool
+    if organisation:
+        game_record["organisation"] = organisation
     game_db.table("game_schedule").upsert(game_record, on_conflict="game_key").execute()
     print(f"✅ Game schedule entry created for {game_key}")
 
@@ -538,7 +604,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # --- Insert team stats ---
     team_records = []
     for side, team in teams.items():
-        team_id = get_or_create_team(league_id, team.get("name"), user_id)
+        team_id = get_or_create_team(league_id, team.get("name"), user_id, sibling_league_ids)
 
         team_record = {
             "numeric_id": numeric_id,
@@ -563,7 +629,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     roster_map = {}  # (side, pno_int) -> player_id
     try:
         for side, team in teams.items():
-            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            team_id = get_or_create_team(league_id, team.get("name"), user_id, sibling_league_ids)
             team_name = team.get("name")
             for pid, player in team.get("pl", {}).items():
                 try:
@@ -604,7 +670,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     try:
         roster_records = []
         for side, team in teams.items():
-            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            team_id = get_or_create_team(league_id, team.get("name"), user_id, sibling_league_ids)
             for pid, player in team.get("pl", {}).items():
                 full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
                 shirt = player.get("shirtNumber")
@@ -650,7 +716,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     shot_records = []
     try:
         for side, team in teams.items():
-            team_id = get_or_create_team(league_id, team.get("name"), user_id)
+            team_id = get_or_create_team(league_id, team.get("name"), user_id, sibling_league_ids)
             team_shots = team.get("shot") or []
             log.debug("Side %s: %d shots found", side, len(team_shots))
             for s in team_shots:
@@ -718,7 +784,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             tno = e.get("tno")
             if tno and str(tno) in teams:
                 team_name = teams[str(tno)].get("name")
-                team_id = get_or_create_team(league_id, team_name, user_id)
+                team_id = get_or_create_team(league_id, team_name, user_id, sibling_league_ids)
 
             player_id = None
             player_name = e.get("player")
