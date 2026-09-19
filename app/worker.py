@@ -40,7 +40,7 @@ from time import perf_counter
 from supabase import create_client
 from supabase.lib.client_options import ClientOptions
 
-from app.utils.json_parser import parse_and_store_game
+from app.utils.json_parser import parse_and_store_game, backfill_orphaned_schedule_rows
 from app.utils.compute_advanced_stats import compute_advanced_stats
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
@@ -496,14 +496,22 @@ def poll_game(game: dict):
             }).eq("game_key", game_key).execute()
 
 
+# How often (in main-loop iterations) to sweep for game_schedule rows with
+# no league_id — e.g. a fixture list imported straight into Supabase rather
+# than through /api/parse. At POLL_INTERVAL=10s this runs about every 5
+# minutes; it's a safety net, not time-critical, so it doesn't need to run
+# every iteration.
+BACKFILL_EVERY_N_LOOPS = 30
+
 def run_worker():
     """Main worker loop - runs continuously polling games."""
     log.info("Worker started | poll_interval=%ds | schema=%s | supabase=%s...", POLL_INTERVAL, DB_SCHEMA, SUPABASE_URL[:30])
-    
+
+    loop_count = 0
     while not _shutdown_requested:
         try:
             games = get_due_games()
-            
+
             if games:
                 log.info("Found %d games due for polling", len(games))
                 for game in games:
@@ -516,10 +524,19 @@ def run_worker():
                         log.error("Error polling %s: %s", game.get("game_key"), e)
             else:
                 log.debug("No games due")
-            
+
+            if loop_count % BACKFILL_EVERY_N_LOOPS == 0:
+                try:
+                    backfilled = backfill_orphaned_schedule_rows()
+                    if backfilled:
+                        log.info("Backfilled league_id/team_ids for %d orphaned game_schedule row(s)", backfilled)
+                except Exception as e:
+                    log.error("Orphaned schedule backfill failed: %s", e)
+
         except Exception as e:
             log.error("Worker loop error: %s", e)
-        
+
+        loop_count += 1
         for _ in range(POLL_INTERVAL * 10):
             if _shutdown_requested:
                 break

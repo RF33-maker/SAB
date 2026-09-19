@@ -538,6 +538,75 @@ def get_or_create_team(league_id: str, name: str, user_id: str = None, sibling_l
     new = ref_db.table("teams").insert({"league_id": league_id, "name": normalized_name}).execute()
     return new.data[0]["team_id"]
 
+def backfill_orphaned_schedule_rows(limit: int = 1000) -> int:
+    """
+    Resolves league_id/home_team_id/away_team_id for game_schedule rows that
+    never went through parse_and_store_game — e.g. a fixture list imported
+    straight into Supabase (a raw CSV import via the table editor, or any
+    other bulk insert that bypasses /api/parse) rather than uploaded through
+    the normal ingestion path. Without this, such rows sit with no
+    league_id/team_ids until each individual game is polled to completion,
+    which defeats pre-season population (teams/branding shown before a
+    season's games have been played).
+
+    This only LINKS rows to a competition that already exists (matched with
+    the same _find_league_id lookup an upload uses) — it never creates one. A
+    schedule for a brand-new competition stays untouched until the competition
+    is created (e.g. via League Management, or by its first live game), since
+    guessing and creating a league here is how near-miss names end up as
+    duplicate leagues with fresh, unlinked teams. Teams are resolved with
+    get_or_create_team plus the previous season's siblings, so returning
+    teams keep their team_id.
+    """
+    res = (
+        ref_db.table("game_schedule")
+        .select("game_key,competitionname,hometeam,awayteam,organisation")
+        .is_("league_id", "null")
+        .limit(limit)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return 0
+
+    league_cache: dict = {}
+    sibling_cache: dict = {}
+    updated = 0
+
+    for row in rows:
+        name = row.get("competitionname")
+        if not name:
+            continue
+        team_names = [n for n in (row.get("hometeam"), row.get("awayteam")) if n]
+
+        if name not in league_cache:
+            league_cache[name] = _find_league_id(
+                name.strip(), _slugify(name.strip()),
+                organisation=row.get("organisation"), team_names=team_names,
+            )
+        league_id = league_cache[name]
+        if not league_id:
+            continue
+
+        if league_id not in sibling_cache:
+            sibling_cache[league_id] = find_sibling_league_ids(league_id, name)
+        sibling_league_ids = sibling_cache[league_id]
+
+        update_data = {"league_id": league_id}
+        if row.get("hometeam"):
+            update_data["home_team_id"] = get_or_create_team(
+                league_id, row["hometeam"], sibling_league_ids=sibling_league_ids
+            )
+        if row.get("awayteam"):
+            update_data["away_team_id"] = get_or_create_team(
+                league_id, row["awayteam"], sibling_league_ids=sibling_league_ids
+            )
+
+        ref_db.table("game_schedule").update(update_data).eq("game_key", row["game_key"]).execute()
+        updated += 1
+
+    return updated
+
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
     query = ref_db.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
@@ -749,6 +818,29 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     log.warning("Failed to process player %s: %s", player_name, e)
                     continue
 
+        # Two feed entries can resolve to the same player_id (fuzzy name matching in
+        # get_or_create_player). A single upsert batch can't contain the same conflict
+        # key twice — Postgres rejects the whole batch ("cannot affect row a second
+        # time") and the game ends up with no player stats at all — so keep the fuller
+        # stat line for each key and warn about the merge.
+        def _stat_weight(rec):
+            return (rec.get("spoints") or 0) + (rec.get("sfieldgoalsattempted") or 0) + (rec.get("sreboundstotal") or 0) + (rec.get("sassists") or 0)
+
+        deduped_records = {}
+        for rec in player_records:
+            key = rec["identifier_duplicate"]
+            existing = deduped_records.get(key)
+            if existing is None:
+                deduped_records[key] = rec
+                continue
+            log.warning(
+                "Game %s: feed players %r and %r resolved to the same player_id — keeping the fuller stat line",
+                numeric_id, existing.get("full_name"), rec.get("full_name"),
+            )
+            if _stat_weight(rec) > _stat_weight(existing):
+                deduped_records[key] = rec
+        player_records = list(deduped_records.values())
+
         log.info("Prepared %d player records for game %s", len(player_records), numeric_id)
         insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
     except Exception as e:
@@ -939,22 +1031,19 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         if not pbp_records:
             print(f"⏭️  No new play-by-play events to insert")
         else:
-            # Insert in chunks of 200 to avoid payload/timeout issues
+            # Upsert in chunks of 200 to avoid payload/timeout issues. Uses
+            # the same insert_supabase upsert helper as shot_chart rather
+            # than a plain insert — two overlapping polls (or a retry after
+            # a partial failure) can both see the same action_number as
+            # "new" via the last_action check above, and a plain insert
+            # would hard-fail the whole chunk on the live_events_game_action_unique
+            # constraint instead of just no-op'ing the already-stored rows.
             CHUNK_SIZE = 200
             total_new = len(pbp_records)
-            inserted_count = 0
-            
+
             for i in range(0, total_new, CHUNK_SIZE):
                 chunk = pbp_records[i:i + CHUNK_SIZE]
-                try:
-                    game_db.table("live_events").insert(chunk).execute()
-                    inserted_count += len(chunk)
-                    if total_new > CHUNK_SIZE:
-                        print(f"   📦 Chunk {i // CHUNK_SIZE + 1}: inserted {len(chunk)} events ({inserted_count}/{total_new})")
-                except Exception as e:
-                    print(f"❌ Error inserting PBP chunk at {i}: {e}")
-            
-            print(f"✅ Inserted {inserted_count} new play-by-play events into live_events")
+                insert_supabase("live_events", chunk, conflict_keys="game_key,action_number")
     except Exception as e:
         print(f"⚠️  Error in play-by-play processing: {e}")
 
