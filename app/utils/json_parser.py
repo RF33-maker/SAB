@@ -626,6 +626,29 @@ def _find_player_by_alias(full_name: str, team_id: str):
     return None
 
 
+def _is_initial_name(name: str) -> bool:
+    """True for placeholder names like "S. Walker" that are less complete than a full name."""
+    first = (name or "").split(" ")[0].replace(".", "")
+    return len(first) <= 1
+
+
+def _preferred_player_names(player_ids) -> dict:
+    """
+    players.full_name for each id: the name we hold for the player (their preferred name,
+    or the one an admin corrected). Initial-only placeholders are skipped so a roster stub
+    can never replace a fuller name typed for the game.
+    """
+    ids = sorted({pid for pid in player_ids if pid})
+    names = {}
+    for start in range(0, len(ids), 100):
+        rows = ref_db.table("players").select("id, full_name").in_("id", ids[start:start + 100]).execute().data or []
+        for row in rows:
+            name = (row.get("full_name") or "").strip()
+            if name and not _is_initial_name(name):
+                names[row["id"]] = name
+    return names
+
+
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
     query = ref_db.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
@@ -806,6 +829,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     insert_supabase("team_stats", team_records, conflict_keys="identifier_duplicate")
 
     # --- Insert player stats (build roster_map for shot linking) ---
+    preferred_names = {}
     player_records = []
     roster_map = {}  # (side, pno_int) -> player_id
     try:
@@ -841,6 +865,19 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     player_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip() or f"Player {pid}"
                     log.warning("Failed to process player %s: %s", player_name, e)
                     continue
+
+        # Store players under the name we hold for them rather than whatever spelling the
+        # scorer typed for this game ("Benedict Baker-Mccann" for "Ben Baker"). The feed's
+        # spelling stays matchable through players.aliases; this keeps the name shown on
+        # top-performance cards and box scores, and the photo tied to it, consistent.
+        preferred_names = _preferred_player_names(rec["player_id"] for rec in player_records)
+        for rec in player_records:
+            preferred = preferred_names.get(rec["player_id"])
+            if preferred and preferred != rec.get("full_name"):
+                first, _, rest = preferred.partition(" ")
+                rec["full_name"] = preferred
+                rec["firstname"] = first
+                rec["familyname"] = rest or rec.get("familyname")
 
         # Two feed entries can resolve to the same player_id (fuzzy name matching in
         # get_or_create_player). A single upsert batch can't contain the same conflict
@@ -891,7 +928,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     "league_id": league_id,
                     "team_id": team_id,
                     "team_no": side,
-                    "player_name": full_name,
+                    "player_name": preferred_names.get(resolved_pid, full_name),
                     "shirt_number": str(shirt) if shirt is not None else None,
                     "pno": _pno_int,
                     "starter": bool(player.get("starter")),
