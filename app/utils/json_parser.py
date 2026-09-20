@@ -607,12 +607,36 @@ def backfill_orphaned_schedule_rows(limit: int = 1000) -> int:
 
     return updated
 
+def _find_player_by_alias(full_name: str, team_id: str):
+    """
+    Match a feed name against players.aliases on the same team (case-insensitive).
+    Aliases are the spellings a scorer keeps entering for a player whose name has
+    been corrected or chosen by the player — e.g. "Benedict Baker-Mccann" for
+    "Ben Baker", or "Manning Baumgardner III" for "Tre Baumgardner III" — so the
+    feed's version resolves to the curated player row (and its photo) instead of
+    creating a fresh one every game.
+    """
+    wanted = normalize_player_name(full_name).lower()
+    if not wanted:
+        return None
+    res = ref_db.table("players").select("id, team_name, league_id, aliases").eq("team_id", team_id).not_.is_("aliases", "null").execute()
+    for row in res.data or []:
+        if any(normalize_player_name(a).lower() == wanted for a in (row.get("aliases") or []) if a):
+            return row
+    return None
+
+
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
     query = ref_db.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
     if shirtnumber is not None:
         query = query.eq("shirtNumber", shirtnumber)
     res = query.execute()
-    
+
+    if not res.data:
+        aliased = _find_player_by_alias(full_name, team_id)
+        if aliased:
+            res.data = [aliased]
+
     if res.data:
         player_id = res.data[0]["id"]
         existing_team_name = res.data[0].get("team_name")
