@@ -182,6 +182,15 @@ def extract_numeric_id(livestats_url: str | None) -> str | None:
     return livestats_url.rstrip("/").split("/")[-1]
 
 
+def _scores_differ(data: dict) -> bool:
+    teams = data.get("tm") or {}
+    try:
+        scores = {int(t.get("tot_sPoints")) for t in teams.values() if t.get("tot_sPoints") not in (None, "")}
+    except (TypeError, ValueError):
+        return False
+    return len(teams) >= 2 and len(scores) >= 2
+
+
 def detect_game_status(data: dict, current_status: str) -> str:
     """
     Detect game status from JSON data.
@@ -227,7 +236,21 @@ def detect_game_status(data: dict, current_status: str) -> str:
                 sub_type = event.get("subType", "")
                 if sub_type in ("end", "final", "finished"):
                     return "final"
-    
+
+        # Scorers sometimes never press "end game": the feed just stops on the last
+        # period ending. With the last scheduled period over and the scores not
+        # level, nothing further can be played, so the game is final.
+        latest = sorted_pbp[0] if sorted_pbp else None
+        if (
+            latest
+            and latest.get("actionType") == "period"
+            and latest.get("subType") == "end"
+            and isinstance(period_info, int)
+            and period_info >= data.get("periodsMax", 4)
+            and _scores_differ(data)
+        ):
+            return "final"
+
     if pbp:
         return "live"
     
