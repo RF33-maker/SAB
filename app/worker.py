@@ -19,7 +19,9 @@ Polling cadence:
     - scheduled: every 2 minutes (or 15 minutes if matchtime is far away)
     - live: every 15 seconds
     - error: every 5 minutes
-    - final: stops polling (next_poll_at = NULL)
+    - final: re-checked every 30 minutes for 6 hours, then every 6 hours, until
+      72 hours after full time (scorers correct stats after the whistle); the
+      game is only re-parsed when the feed has changed. After that, next_poll_at = NULL
 
 Logging:
     LOG_LEVEL env var controls verbosity (default: WARNING)
@@ -42,6 +44,7 @@ from supabase.lib.client_options import ClientOptions
 
 from app.utils.json_parser import parse_and_store_game, backfill_orphaned_schedule_rows
 from app.utils.compute_advanced_stats import compute_advanced_stats
+from app.utils.reconcile import RECONCILE_WINDOW, feed_fingerprint, reconcile_next_poll
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(
@@ -107,7 +110,7 @@ def get_due_games():
     window_start = (now - timedelta(hours=12)).isoformat()
     window_end = (now + timedelta(hours=36)).isoformat()
     
-    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, organisation, status, poll_fail_count, parsed_at, last_polled_at, poll_count, total_poll_bytes'
+    select_cols = 'game_key, competitionname, matchtime, hometeam, awayteam, "LiveStats URL", league_id, organisation, status, poll_fail_count, parsed_at, last_polled_at, poll_count, total_poll_bytes, final_detected_at, last_fingerprint'
     
     games_by_key = {}
     
@@ -173,6 +176,29 @@ def get_due_games():
     except Exception as e:
         log.warning("Query B2 failed: %s", e)
     
+    # Finished and parsed, but still inside the post-game window: scorers keep
+    # correcting stats after full time, so look again and re-parse on change.
+    reconcile_cutoff = (now - RECONCILE_WINDOW).isoformat()
+    for next_poll_filter in ("due", "unset"):
+        try:
+            query = (
+                game_db.table("game_schedule")
+                .select(select_cols)
+                .eq("status", "final")
+                .not_.is_("parsed_at", "null")
+                .gte("final_detected_at", reconcile_cutoff)
+                .not_.is_("LiveStats URL", "null")
+            )
+            query = (
+                query.lte("next_poll_at", now_iso)
+                if next_poll_filter == "due"
+                else query.is_("next_poll_at", "null")
+            )
+            for g in query.execute().data or []:
+                games_by_key[g["game_key"]] = g
+        except Exception as e:
+            log.warning("Reconcile query (%s) failed: %s", next_poll_filter, e)
+
     return list(games_by_key.values())
 
 
@@ -257,7 +283,7 @@ def detect_game_status(data: dict, current_status: str) -> str:
     return current_status if current_status in ("scheduled", "error") else "scheduled"
 
 
-def compute_next_poll(status: str, matchtime_str: str | None) -> str | None:
+def compute_next_poll(status: str, matchtime_str: str | None, final_detected_at: str | None = None) -> str | None:
     """
     Compute next_poll_at based on status and cadence.
     Returns ISO timestamp string or None (to stop polling).
@@ -265,7 +291,7 @@ def compute_next_poll(status: str, matchtime_str: str | None) -> str | None:
     now = datetime.now(timezone.utc)
     
     if status == "final":
-        return None
+        return reconcile_next_poll(final_detected_at, now)
     
     if status == "live":
         return (now + timedelta(seconds=15)).isoformat()
@@ -371,6 +397,61 @@ def log_poll_metrics(game_key: str, game_status: str, poll_number: int, metrics:
     )
 
 
+def reconcile_finished_game(game: dict, data: dict, metrics: dict, now_iso: str, poll_count: int, total_bytes: int):
+    """
+    Post-game re-check of a finished, already-parsed game. Scorers correct stats
+    after full time, so fetch the feed again and re-parse only if it differs from
+    what was stored last time. The status is left as 'final' either way.
+    """
+    game_key = game["game_key"]
+    final_detected_at = game.get("final_detected_at")
+    fingerprint = feed_fingerprint(data)
+
+    update_data = {
+        "last_polled_at": now_iso,
+        "poll_fail_count": 0,
+        "poll_count": poll_count,
+        "poll_bytes_recent": metrics["bytes_in"],
+        "total_poll_bytes": total_bytes,
+        "next_poll_at": compute_next_poll("final", game.get("matchtime"), final_detected_at),
+    }
+
+    if fingerprint == game.get("last_fingerprint"):
+        log.debug("%s: post-game re-check, feed unchanged", game_key)
+        game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
+        return
+
+    log.info("%s: feed changed after full time, re-parsing", game_key)
+    try:
+        parsed_league_id = parse_and_store_game(
+            numeric_id=extract_numeric_id(game.get("LiveStats URL")),
+            league_name=game.get("competitionname", "Unknown League"),
+            game_date=game.get("matchtime"),
+            home_team_name=game.get("hometeam"),
+            away_team_name=game.get("awayteam"),
+            game_key=game_key,
+            livestats_url=game.get("LiveStats URL"),
+            league_id=game.get("league_id"),
+            organisation=game.get("organisation"),
+        )
+        update_data["last_fingerprint"] = fingerprint
+        update_data["parsed_at"] = now_iso
+        game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
+        if parsed_league_id:
+            try:
+                compute_advanced_stats(parsed_league_id)
+            except Exception as e:
+                log.error("%s: advanced stats computation failed: %s", game_key, e)
+    except Exception as e:
+        # Leave last_fingerprint alone so the next re-check tries again; the
+        # game stays final and the stored stats stay as they were.
+        log.error("%s: post-game re-parse failed: %s", game_key, e)
+        game_db.table("game_schedule").update({
+            "last_polled_at": now_iso,
+            "next_poll_at": compute_next_poll("final", game.get("matchtime"), final_detected_at),
+        }).eq("game_key", game_key).execute()
+
+
 def poll_game(game: dict):
     """
     Poll a single game: fetch JSON, detect status, update DB, parse if needed.
@@ -383,6 +464,10 @@ def poll_game(game: dict):
     last_polled_at = game.get("last_polled_at")
     prev_poll_count = game.get("poll_count") or 0
     prev_total_bytes = game.get("total_poll_bytes") or 0
+    final_detected_at = game.get("final_detected_at")
+    last_fingerprint = game.get("last_fingerprint")
+    # A finished, already-parsed game is only here for the post-game re-check.
+    reconciling = current_status == "final" and game.get("parsed_at") is not None
     
     log.debug("Polling: %s (status: %s)", game_key, current_status)
     
@@ -410,7 +495,7 @@ def poll_game(game: dict):
                 "last_polled_at": now_iso,
                 "poll_count": new_poll_count,
                 "poll_bytes_recent": 0,
-                "next_poll_at": compute_next_poll(current_status, matchtime),
+                "next_poll_at": compute_next_poll(current_status, matchtime, final_detected_at),
             }).eq("game_key", game_key).execute()
             return
         
@@ -426,7 +511,7 @@ def poll_game(game: dict):
                 update_data = {
                     "last_polled_at": now_iso,
                     "poll_fail_count": poll_fail_count + 1,
-                    "next_poll_at": compute_next_poll(current_status, matchtime),
+                    "next_poll_at": compute_next_poll(current_status, matchtime, final_detected_at),
                 }
             game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
             return
@@ -436,12 +521,16 @@ def poll_game(game: dict):
         update_data = {
             "last_polled_at": now_iso,
             "poll_fail_count": poll_fail_count + 1,
-            "status": "error" if poll_fail_count >= 2 else current_status,
-            "next_poll_at": compute_next_poll("error" if poll_fail_count >= 2 else current_status, matchtime),
+            "status": "error" if poll_fail_count >= 2 and not reconciling else current_status,
+            "next_poll_at": compute_next_poll("error" if poll_fail_count >= 2 and not reconciling else current_status, matchtime, final_detected_at),
         }
         game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
         return
     
+    if reconciling:
+        reconcile_finished_game(game, data, metrics, now_iso, prev_poll_count + 1, prev_total_bytes + response_bytes)
+        return
+
     new_status = detect_game_status(data, current_status)
     new_total_bytes = prev_total_bytes + response_bytes
 
@@ -454,13 +543,13 @@ def poll_game(game: dict):
         "status": new_status,
         "last_polled_at": now_iso,
         "poll_fail_count": 0,
-        "next_poll_at": compute_next_poll(new_status, matchtime),
+        "next_poll_at": compute_next_poll(new_status, matchtime, final_detected_at or now_iso),
         "poll_count": new_poll_count,
         "poll_bytes_recent": response_bytes,
         "total_poll_bytes": new_total_bytes,
     }
     
-    if new_status == "final" and current_status != "final":
+    if new_status == "final" and (current_status != "final" or not final_detected_at):
         update_data["final_detected_at"] = now_iso
     
     game_db.table("game_schedule").update(update_data).eq("game_key", game_key).execute()
@@ -497,6 +586,7 @@ def poll_game(game: dict):
             if parse_reason == "final":
                 game_db.table("game_schedule").update({
                     "parsed_at": now_iso,
+                    "last_fingerprint": feed_fingerprint(data),
                 }).eq("game_key", game_key).execute()
 
                 # Game is final and stats are stored — recompute advanced
