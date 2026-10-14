@@ -6,6 +6,7 @@ from io import BytesIO
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from app.utils.compute_advanced_stats import compute_advanced_stats
+from app.utils.player_names import initial_matches_full_name
 
 log = logging.getLogger("json_parser")
 
@@ -276,7 +277,7 @@ def normalize_player_name(name: str) -> str:
     
     return normalized
 
-def find_similar_player(full_name: str, team_id: str, similarity_threshold: float = 0.85):
+def find_similar_player(full_name: str, team_id: str, similarity_threshold: float = 0.85, shirtnumber=None):
     from difflib import SequenceMatcher
     
     normalized_search = normalize_player_name(full_name)
@@ -290,26 +291,17 @@ def find_similar_player(full_name: str, team_id: str, similarity_threshold: floa
     best_score = 0.0
     match_type = None
     
-    search_parts = normalized_search.split()
-    
     for player in result.data:
         existing_name = normalize_player_name(player["full_name"])
-        existing_parts = existing_name.split()
-        
-        if len(search_parts) >= 2 and len(existing_parts) >= 2:
-            search_last = search_parts[-1].lower()
-            existing_last = existing_parts[-1].lower()
-            search_first = search_parts[0].lower()
-            existing_first = existing_parts[0].lower()
-            
-            if search_last == existing_last:
-                if (len(search_first) == 1 and existing_first.startswith(search_first)) or \
-                   (len(existing_first) == 1 and search_first.startswith(existing_first)):
-                    best_match = player
-                    best_score = 1.0
-                    match_type = "initial"
-                    break
-        
+        # "D. Crnac" is "Dzana Crnac": the same player under the abbreviation the
+        # play-by-play uses. (Comparing the raw first word missed it, because "D."
+        # is two characters with its full stop.)
+        if initial_matches_full_name(normalized_search, existing_name, shirtnumber, player.get("shirtNumber")):
+            best_match = player
+            best_score = 1.0
+            match_type = "initial"
+            break
+
         similarity = SequenceMatcher(None, normalized_search.lower(), existing_name.lower()).ratio()
         
         if similarity > best_score and similarity >= similarity_threshold:
@@ -677,7 +669,7 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
         
         return player_id
     
-    similar_player = find_similar_player(full_name, team_id)
+    similar_player = find_similar_player(full_name, team_id, shirtnumber=shirtnumber)
     if similar_player:
         player_id = similar_player["id"]
         
