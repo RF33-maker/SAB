@@ -841,13 +841,13 @@ def _parse_footer_stats(text: str, home_abbr: str, away_abbr: str) -> tuple:
     return home_e, away_e
 
 
-def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str) -> dict:
+def _parse_box_score(pdf, meta: dict, league_name: str, user_id: str, league_id: str = None) -> dict:
     """
     Parse FIBA Box Score PDF. Returns {player_count, team_count}.
     Writes to test.player_stats and test.team_stats.
     """
     game_key = meta["game_key"]
-    league_id = get_or_create_league(league_name, user_id)
+    league_id = league_id or get_or_create_league(league_name, user_id)
     ref_db = _get_pdf_ref_db()
 
     full_text = "\n".join(
@@ -1820,7 +1820,7 @@ def _parse_rotations(pdf, meta: dict, league_id: str) -> dict:
 # Main Entry Point
 # ---------------------------------------------------------------------------
 
-def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id: str = None) -> dict:
+def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id: str = None, league_id: str = None) -> dict:
     """
     Main entry point for PDF ingestion.
 
@@ -1829,6 +1829,9 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
         league_name:        Used for entity resolution via get_or_create_league.
         provided_game_key:  Override game_key if already known (e.g. from prior upload).
         user_id:            Optional user UUID for created_by tracking.
+        league_id:          Existing competitions.league_id to attach the game to.
+                            When given it wins over league_name, so a typo or a
+                            suffix like "FIBA" can't spawn a duplicate league.
 
     Returns:
         dict with keys: skipped, message, game_key, report_type, counts
@@ -1888,14 +1891,23 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
                     competition = competition.replace(suffix, "")
                 league_name = competition.strip() or "Unknown"
 
+            if league_id:
+                found = (
+                    _get_pdf_ref_db().table("competitions")
+                    .select("league_id,name").eq("league_id", league_id).limit(1).execute()
+                )
+                if not found.data:
+                    return {"error": f"league_id {league_id} does not exist"}
+                league_name = found.data[0]["name"]
+
             print(f"🏀 PDF parse: type={report_type}, game_key={game_key}, league={league_name}")
 
-            league_id = get_or_create_league(league_name, user_id)
+            league_id = league_id or get_or_create_league(league_name, user_id)
 
             counts = {}
 
             if report_type == "box_score":
-                counts = _parse_box_score(pdf, meta, league_name, user_id)
+                counts = _parse_box_score(pdf, meta, league_name, user_id, league_id=league_id)
 
             elif report_type == "pbp":
                 # Resolve teams for PBP

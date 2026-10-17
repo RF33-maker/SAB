@@ -19,6 +19,8 @@ def handle_parse_pdf():
     Accepts multipart/form-data with:
       - file:         PDF file (required)
       - competition_name:  Competition / league name (required)
+      - league_id:    Existing league to attach to (optional — wins over the name,
+                      which is otherwise matched by name and created if missing)
       - game_key:     Override game_key (optional — defaults to PDF_{game_no})
       - user_id:      User UUID for entity tracking (optional)
 
@@ -38,15 +40,16 @@ def handle_parse_pdf():
             request.form.get("competition_name", "").strip()
             or request.form.get("league_name", "").strip()
         )
-        if not league_name:
-            return jsonify({"error": "competition_name is required"}), 400
+        league_id = request.form.get("league_id", "").strip() or None
+        if not league_name and not league_id:
+            return jsonify({"error": "competition_name or league_id is required"}), 400
 
         game_key = request.form.get("game_key", "").strip() or None
         user_id = request.form.get("user_id", "").strip() or None
 
         log.info(
-            "PDF parse request: file=%s league=%s game_key=%s user=%s",
-            pdf_file.filename, league_name, game_key, user_id,
+            "PDF parse request: file=%s league=%s league_id=%s game_key=%s user=%s",
+            pdf_file.filename, league_name, league_id, game_key, user_id,
         )
 
         result = parse_pdf(
@@ -54,6 +57,7 @@ def handle_parse_pdf():
             league_name=league_name,
             provided_game_key=game_key,
             user_id=user_id,
+            league_id=league_id,
         )
 
         if "error" in result:
@@ -77,6 +81,7 @@ def handle_parse():
 
         file_path = data.get("file_path")
         user_id = data.get("user_id")
+        league_id = (data.get("league_id") or "").strip() or None
         league_name = (
             data.get("competition_name", "").strip()
             or data.get("league_name", "").strip()
@@ -102,6 +107,7 @@ def handle_parse():
                 pdf_file=io.BytesIO(file_bytes),
                 league_name=league_name or "Unknown",
                 user_id=user_id,
+                league_id=league_id,
             )
 
             if "error" in result:
