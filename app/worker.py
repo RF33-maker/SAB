@@ -266,13 +266,21 @@ def detect_game_status(data: dict, current_status: str) -> str:
         # Scorers sometimes never press "end game": the feed just stops on the last
         # period ending. With the last scheduled period over and the scores not
         # level, nothing further can be played, so the game is final.
+        #
+        # Judge the period that actually ended (the event's own period), not the
+        # feed's top-level "period": during a break the feed already points at the
+        # next period, so the end of Q3 looked like the end of Q4 and live games
+        # were marked final at the end of the third quarter.
         latest = sorted_pbp[0] if sorted_pbp else None
+        ended_period = latest.get("period") if latest else None
         if (
             latest
             and latest.get("actionType") == "period"
             and latest.get("subType") == "end"
+            and isinstance(ended_period, int)
             and isinstance(period_info, int)
-            and period_info >= data.get("periodsMax", 4)
+            and ended_period >= data.get("periodsMax", 4)
+            and period_info <= ended_period
             and _scores_differ(data)
         ):
             return "final"
