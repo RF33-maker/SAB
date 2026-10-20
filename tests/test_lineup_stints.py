@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.utils.lineup_builder import (  # noqa: E402
     _resolve_player_from_event,
+    build_context_rows,
     compute_stints,
     order_events_by_game_clock,
 )
@@ -97,6 +98,46 @@ def test_every_player_keeps_one_id_and_their_official_minutes(game_key):
             assert on_court.get(row["player_id"], 0) == 0
         else:
             assert abs(on_court[row["player_id"]] - secs(row["sminutes"])) <= MINUTES_TOLERANCE.get(game_key, 30)
+
+
+OWN_KEYS = ("fg2_made", "fg2_attempted", "fg3_made", "fg3_attempted", "ft_made", "ft_attempted",
+            "oreb", "dreb", "assists", "turnovers", "steals", "blocks")
+
+
+@pytest.mark.parametrize("game_key", GAMES)
+def test_opponent_stats_mirror_the_other_team(game_key):
+    _, stints = load(game_key)
+    teams = sorted({s["team_id"] for s in stints})
+    for team, other in ((teams[0], teams[1]), (teams[1], teams[0])):
+        mine = [s for s in stints if s["team_id"] == team]
+        theirs = [s for s in stints if s["team_id"] == other]
+        for k in OWN_KEYS:
+            assert sum(s[f"opp_{k}"] for s in mine) == sum(s[k] for s in theirs), k
+        opp_points = sum(2 * s["opp_fg2_made"] + 3 * s["opp_fg3_made"] + s["opp_ft_made"] for s in mine)
+        assert opp_points == sum(s["points_against"] for s in mine)
+
+
+@pytest.mark.parametrize("game_key", GAMES)
+def test_context_rows_track_the_score_and_starters(game_key):
+    data, stints = load(game_key)
+    for i, s in enumerate(stints):
+        s["id"] = f"stint-{i}"
+    rosters = collections.defaultdict(list)
+    for row in data["rosters"]:
+        rosters[row["team_id"]].append(row)
+    rows = build_context_rows(stints, dict(rosters))
+    assert len(rows) == len(stints)
+    for team in data["teams"]:
+        mine = sorted((r for r in rows if r["team_id"] == team["team_id"]), key=lambda r: r["start_game_secs"])
+        assert mine[0]["score_margin_at_stint_start"] == 0
+        assert mine[0]["team_starters_on_court"] == 5
+        assert all(0 <= r["team_starters_on_court"] <= 5 for r in mine)
+        last = mine[-1]
+        final = last["score_margin_at_stint_start"] + last["points_for"] - last["points_against"]
+        opponent = next(t for t in data["teams"] if t["team_id"] != team["team_id"])
+        assert final == team["tot_spoints"] - opponent["tot_spoints"]
+        assert all(r["is_competitive_stint"] == (r["is_valid_lineup"] and not r["is_garbage_time"]
+                                                 and not r["is_short_clock_end_period"]) for r in mine)
 
 
 def test_late_correction_is_placed_in_its_own_period():

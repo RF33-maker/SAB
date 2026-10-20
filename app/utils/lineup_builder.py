@@ -30,6 +30,7 @@ lineup_key generation:
 
 import os
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 log = logging.getLogger("lineup_builder")
@@ -232,6 +233,12 @@ def _normalize_period(period, period_type=None) -> Optional[int]:
 # Internal lineup state management
 # ---------------------------------------------------------------------------
 
+OPP_STAT_KEYS = (
+    "fg2_made", "fg2_attempted", "fg3_made", "fg3_attempted", "ft_made", "ft_attempted",
+    "oreb", "dreb", "assists", "turnovers", "steals", "blocks", "fouls",
+)
+
+
 class _TeamLineup:
     """
     Tracks the active 5-man lineup for one team across a game.
@@ -280,6 +287,8 @@ class _TeamLineup:
         self.blocks = 0
         self.possessions_for = 0
         self.possessions_against = 0
+        # What the opposing team did while this lineup was on court.
+        self.opp = {k: 0 for k in OPP_STAT_KEYS}
 
     def _player_list(self) -> list:
         return list(self.active.values())
@@ -362,6 +371,7 @@ class _TeamLineup:
             "possessions_for": self.possessions_for,
             "possessions_against": self.possessions_against,
             "is_valid_lineup": is_valid,
+            **{f"opp_{k}": v for k, v in self.opp.items()},
         }
         self.completed_stints.append(stint)
 
@@ -472,6 +482,21 @@ class _TeamLineup:
 
     def add_points_against(self, pts: int):
         self.pts_against += pts
+
+    def add_opp_stat(self, action_type: str, sub_type: str, success: bool):
+        """Record an opponent event against this team's current stint."""
+        action_type = (action_type or "").lower()
+        sub_type = (sub_type or "").lower()
+        if action_type in ("2pt", "3pt", "freethrow"):
+            prefix = {"2pt": "fg2", "3pt": "fg3", "freethrow": "ft"}[action_type]
+            self.opp[f"{prefix}_attempted"] += 1
+            if success:
+                self.opp[f"{prefix}_made"] += 1
+        elif action_type == "rebound":
+            self.opp["oreb" if sub_type == "offensive" else "dreb"] += 1
+        elif action_type in ("assist", "turnover", "steal", "block", "foul"):
+            self.opp[{"assist": "assists", "turnover": "turnovers", "steal": "steals",
+                      "block": "blocks", "foul": "fouls"}[action_type]] += 1
 
 
 # ---------------------------------------------------------------------------
@@ -808,6 +833,13 @@ def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id
                 tl.flush_pending_subs(game_secs, action, clock, period)
 
         # --- Stat attribution ---
+        if event_team_id and event_team_id in team_state and action_type in (
+            "2pt", "3pt", "freethrow", "rebound", "assist", "turnover", "steal", "block", "foul",
+        ):
+            for tid, tl in team_state.items():
+                if tid != event_team_id:
+                    tl.add_opp_stat(action_type, evt.get("sub_type"), bool(evt.get("success")))
+
         if action_type in ("2pt", "3pt", "freethrow"):
             success = bool(evt.get("success"))
             scoring = bool(evt.get("scoring"))
@@ -938,9 +970,7 @@ def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league
     try:
         stint_rows = (
             db.table("lineup_stints")
-            .select("id, team_id, lineup_key, period, start_game_secs, end_game_secs, "
-                    "seconds_played, points_for, points_against, possessions_for, possessions_against, "
-                    "lineup_player_ids, lineup_names")
+            .select("*")
             .eq("game_key", game_key)
             .execute()
         )
@@ -1009,11 +1039,94 @@ def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league
     # (the lowest id), so they agree on what survives.
     _remove_duplicate_stints(db, game_key)
 
+    # On/off reads lineup_stints_context_v1 and the per-player summary table, so
+    # refresh both here rather than relying on a separate backfill run.
+    _write_context_rows(db, game_key, rosters_by_team)
+    _refresh_player_on_off(db, league_id)
+
     log.info(
         "game=%s: wrote %d lineup stints, %d player on-court rows",
         game_key, len(all_stints), len(player_rows),
     )
     return True
+
+
+def build_context_rows(stint_rows: list, rosters_by_team: dict) -> list:
+    """
+    lineup_stints_context_v1 rows for one game's stints: the score margin when
+    each stint started, garbage-time and end-of-quarter flags (on/off leaves
+    those out), starters on court, and the opponent's stats during the stint.
+    Garbage time is Q4 only: from 5:00 left at 10+, 7:30 at 20+, 10:00 at 25+.
+    """
+    starters = {
+        team_id: {str(r.get("player_id")) for r in roster if r.get("starter") and r.get("player_id")}
+        for team_id, roster in rosters_by_team.items()
+    }
+    by_team: dict = {}
+    for s in stint_rows:
+        by_team.setdefault(s["team_id"], []).append(s)
+
+    copied = (
+        "game_key", "league_id", "team_id", "lineup_key", "lineup_player_ids", "lineup_names",
+        "period", "start_action", "end_action", "start_clock", "end_clock", "start_game_secs",
+        "end_game_secs", "seconds_played", "points_for", "points_against", "fg2_made",
+        "fg2_attempted", "fg3_made", "fg3_attempted", "ft_made", "ft_attempted", "oreb", "dreb",
+        "assists", "turnovers", "fouls", "steals", "blocks", "possessions_for",
+        "possessions_against", "is_valid_lineup",
+    )
+    rows = []
+    for team_id, team_stints in by_team.items():
+        team_stints.sort(key=lambda s: (s.get("start_game_secs") or 0, s.get("start_action") or 0))
+        margin = 0
+        for s in team_stints:
+            period = s.get("period") or 0
+            start = s.get("start_game_secs") or 0
+            secs = s.get("seconds_played") or 0
+            garbage = period == 4 and (
+                (start >= 2100 and abs(margin) >= 10)
+                or (start >= 1950 and abs(margin) >= 20)
+                or (start >= 1800 and abs(margin) >= 25)
+            )
+            short_clock = (period == 1 and start >= 598) or (period == 2 and start >= 1198) or (
+                period == 3 and start >= 1798)
+            valid = bool(s.get("is_valid_lineup", True))
+            row = {k: s.get(k) for k in copied}
+            row.update({
+                "stint_id": s["id"],
+                "team_starters_on_court": len({str(p) for p in (s.get("lineup_player_ids") or [])}
+                                              & starters.get(team_id, set())),
+                "score_margin_at_stint_start": margin,
+                "abs_score_margin": abs(margin),
+                "is_garbage_time": garbage,
+                "is_short_clock_end_period": short_clock,
+                "is_competitive_stint": valid and not garbage and not short_clock,
+                "opponent_context_status": "complete" if secs > 0 else "ignored_zero_seconds",
+                "opponent_context_updated_at": datetime.now(timezone.utc).isoformat(),
+                **{f"opp_{k}": s.get(f"opp_{k}") or 0 for k in OPP_STAT_KEYS},
+            })
+            rows.append(row)
+            margin += (s.get("points_for") or 0) - (s.get("points_against") or 0)
+    return rows
+
+
+def _write_context_rows(db, game_key: str, rosters_by_team: dict) -> None:
+    try:
+        stints = (db.table("lineup_stints").select("*").eq("game_key", game_key).execute()).data or []
+        rows = build_context_rows(stints, rosters_by_team)
+        if not _delete_by_game_key(db, "lineup_stints_context_v1", game_key):
+            log.error("game=%s: could not clear old context rows; not writing new ones", game_key)
+            return
+        _bulk_insert(db, "lineup_stints_context_v1", rows, game_key)
+    except Exception as exc:
+        log.error("game=%s: writing lineup context failed: %s", game_key, exc)
+
+
+def _refresh_player_on_off(db, league_id: str) -> None:
+    """Recompute the league's rows in player_on_off_season (one SQL call)."""
+    try:
+        db.rpc("refresh_player_on_off", {"p_league_id": league_id}).execute()
+    except Exception as exc:
+        log.error("league=%s: refresh_player_on_off failed: %s", league_id, exc)
 
 
 def _remove_duplicate_stints(db, game_key: str) -> None:
