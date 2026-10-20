@@ -922,9 +922,14 @@ def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league
 
     # Delete existing stints for this game first (idempotent).
     # Fetch IDs first then delete in small batches to avoid Supabase statement timeouts
-    # that occur when deleting many rows via a single filter query.
-    _delete_by_game_key(db, "lineup_stints", game_key)
-    _delete_by_game_key(db, "player_on_court_stints", game_key)
+    # that occur when deleting many rows via a single filter query. Player rows go
+    # first so the lineup_stints delete has nothing to cascade into. If anything is
+    # left behind, stop: inserting on top of old stints is how games ended up with
+    # two overlapping sets.
+    if not (_delete_by_game_key(db, "player_on_court_stints", game_key)
+            and _delete_by_game_key(db, "lineup_stints", game_key)):
+        log.error("game=%s: could not clear old stints; not writing new ones", game_key)
+        return False
 
     # Insert lineup_stints in chunks
     _bulk_insert(db, "lineup_stints", all_stints, game_key)
@@ -1062,12 +1067,12 @@ def _remove_duplicate_stints(db, game_key: str) -> None:
 # Utility: bulk insert / delete with chunking
 # ---------------------------------------------------------------------------
 
-def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50):
+def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50) -> bool:
     """
     Delete all rows for game_key from table using ID-based batch deletes.
     A single DELETE ... WHERE game_key=X can time out in Supabase when the
     table has many rows; fetching IDs first and deleting in small batches is
-    much more reliable.
+    much more reliable. Returns False if any row could not be deleted.
     """
     try:
         id_res = (
@@ -1079,20 +1084,20 @@ def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50):
         ids = [r["id"] for r in (id_res.data or [])]
     except Exception as exc:
         log.warning("game=%s: could not fetch IDs from %s for deletion: %s", game_key, table, exc)
-        return
+        return False
 
-    if not ids:
-        return
-
+    ok = True
     for i in range(0, len(ids), chunk_size):
         batch = ids[i:i + chunk_size]
         try:
             db.table(table).delete().in_("id", batch).execute()
         except Exception as exc:
+            ok = False
             log.error(
                 "game=%s: failed deleting batch from %s (offset=%d): %s",
                 game_key, table, i, exc,
             )
+    return ok
 
 
 def _bulk_insert(db, table: str, rows: list, game_key: str, chunk_size: int = 200):
