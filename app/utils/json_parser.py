@@ -6,7 +6,7 @@ from io import BytesIO
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from app.utils.compute_advanced_stats import compute_advanced_stats
-from app.utils.player_names import initial_matches_full_name
+from app.utils.player_names import clean_feed_name, initial_matches_full_name, is_initial_name, pick_player
 
 log = logging.getLogger("json_parser")
 
@@ -599,31 +599,6 @@ def backfill_orphaned_schedule_rows(limit: int = 1000) -> int:
 
     return updated
 
-def _find_player_by_alias(full_name: str, team_id: str):
-    """
-    Match a feed name against players.aliases on the same team (case-insensitive).
-    Aliases are the spellings a scorer keeps entering for a player whose name has
-    been corrected or chosen by the player — e.g. "Benedict Baker-Mccann" for
-    "Ben Baker", or "Manning Baumgardner III" for "Tre Baumgardner III" — so the
-    feed's version resolves to the curated player row (and its photo) instead of
-    creating a fresh one every game.
-    """
-    wanted = normalize_player_name(full_name).lower()
-    if not wanted:
-        return None
-    res = ref_db.table("players").select("id, team_name, league_id, aliases").eq("team_id", team_id).not_.is_("aliases", "null").execute()
-    for row in res.data or []:
-        if any(normalize_player_name(a).lower() == wanted for a in (row.get("aliases") or []) if a):
-            return row
-    return None
-
-
-def _is_initial_name(name: str) -> bool:
-    """True for placeholder names like "S. Walker" that are less complete than a full name."""
-    first = (name or "").split(" ")[0].replace(".", "")
-    return len(first) <= 1
-
-
 def _preferred_player_names(player_ids) -> dict:
     """
     players.full_name for each id: the name we hold for the player (their preferred name,
@@ -636,59 +611,51 @@ def _preferred_player_names(player_ids) -> dict:
         rows = ref_db.table("players").select("id, full_name").in_("id", ids[start:start + 100]).execute().data or []
         for row in rows:
             name = (row.get("full_name") or "").strip()
-            if name and not _is_initial_name(name):
+            if name and not is_initial_name(name):
                 names[row["id"]] = name
     return names
 
 
+def _shirts_worn(player_ids) -> dict:
+    """Every shirt number each player has a stat line under: {player_id: {"4", "14"}}."""
+    worn = {}
+    for start in range(0, len(player_ids), 100):
+        rows = game_db.table("player_stats").select("player_id, shirtnumber").in_("player_id", player_ids[start:start + 100]).execute().data or []
+        for row in rows:
+            if row.get("shirtnumber") not in (None, ""):
+                worn.setdefault(row["player_id"], set()).add(str(row["shirtnumber"]))
+    return worn
+
+
 def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_name=None, league_id=None, user_id: str = None):
-    query = ref_db.table("players").select("id, team_name, league_id").eq("full_name", full_name).eq("team_id", team_id)
-    if shirtnumber is not None:
-        query = query.eq("shirtNumber", shirtnumber)
-    res = query.execute()
+    """
+    The player id for a feed name on a team, creating a record only when nobody on the
+    team is that player. See player_names.pick_player for how a name is matched; it must
+    give the same answer on every poll of a live game, or each re-poll that lands on a
+    different id leaves a second stat row behind.
+    """
+    full_name = clean_feed_name(full_name)
+    candidates = ref_db.table("players").select("id, full_name, shirtNumber, team_name, league_id, aliases, created_at").eq("team_id", team_id).execute().data or []
+    match, how = pick_player(full_name, shirtnumber, candidates, league_id=league_id, shirts_worn=_shirts_worn)
 
-    if not res.data:
-        aliased = _find_player_by_alias(full_name, team_id)
-        if aliased:
-            res.data = [aliased]
-
-    if res.data:
-        player_id = res.data[0]["id"]
-        existing_team_name = res.data[0].get("team_name")
-        existing_league_id = res.data[0].get("league_id")
-        
+    if match:
         update_data = {}
-        if not existing_team_name and team_name:
+        if not match.get("team_name") and team_name:
             update_data["team_name"] = team_name
-        if not existing_league_id and league_id:
+        if not match.get("league_id") and league_id:
             update_data["league_id"] = league_id
-        
+        # A full name reaching an "A. Grimsdottir" record is that player's real name:
+        # store it, and keep the abbreviation matchable as an alias.
+        if how == "initial" and is_initial_name(match.get("full_name")) and not is_initial_name(full_name):
+            update_data["full_name"] = full_name
+            update_data["aliases"] = list(dict.fromkeys((match.get("aliases") or []) + [match["full_name"]]))
         if update_data:
-            ref_db.table("players").update(update_data).eq("id", player_id).execute()
+            ref_db.table("players").update(update_data).eq("id", match["id"]).execute()
             print(f"✅ Updated player {full_name} with missing fields: {list(update_data.keys())}")
-        
-        return player_id
-    
-    similar_player = find_similar_player(full_name, team_id, shirtnumber=shirtnumber)
-    if similar_player:
-        player_id = similar_player["id"]
-        
-        update_data = {}
-        existing_result = ref_db.table("players").select("team_name, league_id").eq("id", player_id).execute()
-        if existing_result.data:
-            existing_team_name = existing_result.data[0].get("team_name")
-            existing_league_id = existing_result.data[0].get("league_id")
-            
-            if not existing_team_name and team_name:
-                update_data["team_name"] = team_name
-            if not existing_league_id and league_id:
-                update_data["league_id"] = league_id
-            
-            if update_data:
-                ref_db.table("players").update(update_data).eq("id", player_id).execute()
-        
-        return player_id
-    
+        if how != "exact":
+            log.info("Matched %r to player %s %r (%s)", full_name, match["id"], match.get("full_name"), how)
+        return match["id"]
+
     insert_data = {
         "full_name": full_name,
         "team_id": team_id,
@@ -698,13 +665,38 @@ def get_or_create_player(full_name: str, team_id: str, shirtnumber=None, team_na
         insert_data["team_name"] = team_name
     if league_id:
         insert_data["league_id"] = league_id
-    
+
     new = ref_db.table("players").insert(insert_data).execute()
+    log.info("Created player %r (#%s) on team %s", full_name, shirtnumber, team_id)
     return new.data[0]["id"]
 
 # ----------------------------
 # Game Parser
 # ----------------------------
+
+def _drop_stale_player_rows(game_key: str, numeric_id: str, player_records: list):
+    """
+    Remove this game's stat rows that the latest box score no longer produces. Rows are
+    keyed by game + player id, so if a re-poll resolves a player to a different id the
+    earlier row would otherwise stay: a 0:00 line from the pre-game roster beside the
+    real one, an extra game played on the old id. Runs only after the new rows are
+    stored, and never on an empty box score.
+    """
+    if not player_records or not game_key or not numeric_id:
+        return
+    keep = {rec["identifier_duplicate"] for rec in player_records}
+    existing = game_db.table("player_stats").select("id, identifier_duplicate, player_id, full_name").eq("game_key", game_key).execute().data or []
+    # Only rows this parser wrote for this feed game; PDF uploads and hand-entered
+    # rows carry other keys and are never touched.
+    ours = f"{numeric_id}_"
+    stale = [row for row in existing if (row.get("identifier_duplicate") or "").startswith(ours) and row["identifier_duplicate"] not in keep]
+    if not stale:
+        return
+    for row in stale:
+        log.warning("Game %s: removing stat row for %r (player %s), not in the latest box score",
+                    numeric_id, row.get("full_name"), row.get("player_id"))
+    game_db.table("player_stats").delete().in_("id", [row["id"] for row in stale]).execute()
+
 
 def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None, league_id: str = None, organisation: str = None):
     print(f"🔍 Processing game {numeric_id}")
@@ -830,7 +822,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             team_name = team.get("name")
             for pid, player in team.get("pl", {}).items():
                 try:
-                    full_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip()
+                    full_name = clean_feed_name(f"{player.get('firstName', '')} {player.get('familyName', '')}")
                     player_id = get_or_create_player(full_name, team_id, player.get("shirtNumber"), team_name, league_id, user_id)
 
                     # Build roster_map for shot linking: pno from roster is the dict key (pid)
@@ -852,6 +844,9 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
                     }
                     for json_key, db_key in PLAYER_FIELD_MAP.items():
                         player_record[db_key] = _coerce_empty(player.get(json_key))
+                    for part in ("firstname", "familyname"):
+                        if isinstance(player_record.get(part), str):
+                            player_record[part] = clean_feed_name(player_record[part])
                     player_records.append(player_record)
                 except Exception as e:
                     player_name = f"{player.get('firstName', '')} {player.get('familyName', '')}".strip() or f"Player {pid}"
@@ -896,6 +891,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
 
         log.info("Prepared %d player records for game %s", len(player_records), numeric_id)
         insert_supabase("player_stats", player_records, conflict_keys="identifier_duplicate")
+        _drop_stale_player_rows(game_key, numeric_id, player_records)
     except Exception as e:
         log.error("Failed to process player stats for game %s: %s", numeric_id, e, exc_info=True)
 
@@ -1022,7 +1018,16 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
             player_id = None
             player_name = e.get("player")
             if player_name and team_id:
-                player_id = get_or_create_player(player_name, team_id, e.get("shirtNumber"), team_name, league_id, user_id)
+                # The play-by-play names players "A. Smith"; the box score above already
+                # resolved this roster slot to an id, so use it. Matching the abbreviation
+                # by name is what created "X. Surname" stub players that later polls'
+                # box scores then landed on.
+                try:
+                    player_id = roster_map.get((str(tno), int(e.get("pno"))))
+                except (ValueError, TypeError):
+                    player_id = None
+                if player_id is None:
+                    player_id = get_or_create_player(player_name, team_id, e.get("shirtNumber"), team_name, league_id, user_id)
 
             # Build score string from s1 and s2
             s1 = e.get("s1", "")
