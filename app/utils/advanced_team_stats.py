@@ -45,11 +45,47 @@ def calculate_net_rating(off, defn):
     return off - defn
 
 
+def calculate_shared_possessions(team_poss, opp_poss):
+    """
+    Both teams in a game have (near enough) the same number of possessions, so the
+    two box-score estimates are averaged and that one figure is used for both
+    sides' ratings. Using each side's own estimate lets a noisy one (e.g. a
+    31-turnover game) skew a team's offence and its opponent's defence differently.
+    """
+    return (team_poss + opp_poss) / 2
+
+
+def parse_game_minutes(team_minutes, players_on_court=5, default=40.0):
+    """
+    Game length in minutes from a box score's team minutes ("tot_sminutes").
+
+    FIBA LiveStats gives the five players' summed minutes as "MM:SS", and often
+    with 60 in the seconds ("199:60" = 200:00, "224:60" = one overtime).
+    Returns `default` when the value is missing or implausible.
+    """
+    if team_minutes in (None, ""):
+        return default
+    try:
+        text = str(team_minutes).strip()
+        if ":" in text:
+            mins, secs = text.split(":", 1)
+            total = float(mins) + float(secs or 0) / 60
+        else:
+            total = float(text)
+    except (TypeError, ValueError):
+        return default
+    game = total / players_on_court
+    # Anything shorter than regulation-ish or absurdly long is a bad feed value.
+    if game < 35 or game > 80:
+        return default
+    return game
+
+
 def calculate_pace(team_poss, opp_poss, minutes=40):
     """
     Calculate pace: estimated possessions per 40 minutes
     Pace = 40 * ((TeamPoss + OppPoss) / (2 * Minutes))
-    Default minutes = 40 (game duration in minutes)
+    `minutes` is the game's length, so overtime games are scaled back to 40.
     """
     return 40 * safe_div(team_poss + opp_poss, 2 * minutes)
 
@@ -397,10 +433,15 @@ def process_team_vs_opponent(team, opp):
     team_points = team.get("tot_spoints", 0) or 0
     opp_points = opp.get("tot_spoints", 0) or 0
     
-    off_rating = calculate_off_rating(team_points, team_poss)
-    def_rating = calculate_def_rating(opp_points, opp_poss)
+    # Ratings use one possession count for both sides of the game.
+    shared_poss = calculate_shared_possessions(team_poss, opp_poss)
+    off_rating = calculate_off_rating(team_points, shared_poss)
+    def_rating = calculate_def_rating(opp_points, shared_poss)
     net_rating = calculate_net_rating(off_rating, def_rating)
-    pace = calculate_pace(team_poss, opp_poss)
+
+    # Pace per 40 minutes, so overtime games don't inflate it.
+    game_minutes = parse_game_minutes(team.get("tot_sminutes") or opp.get("tot_sminutes"))
+    pace = calculate_pace(team_poss, opp_poss, minutes=game_minutes)
     
     # Efficiency metrics
     efg = calculate_efg(team)
