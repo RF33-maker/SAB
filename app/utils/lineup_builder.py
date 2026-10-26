@@ -6,8 +6,13 @@ and substitution data for a single game.
 
 Algorithm overview:
   1. Load game_rosters for the game → identify starting fives per team.
-  2. Load live_events ordered by action_number.
-  3. Walk events in order, tracking the active 5-man lineup per team.
+  2. Load live_events and put them in game-clock order (period, time elapsed,
+     then action_number). Scorers enter corrections after the fact, so feed order
+     is not game order: a Q3 assist typed in after the final buzzer must land in
+     Q3, not reopen the third quarter at the end of the game.
+  3. Walk events in order, tracking the active 5-man lineup per team. Every
+     player is identified by their game_rosters entry (the box-score player),
+     never by the event's own player_id, which can be an "X. Surname" stub.
   4. Open a new stint when the game starts or when a substitution completes.
   5. Close the current stint on substitution, period boundary, or end of game.
   6. Attribute scoring, shooting, rebound, turnover, and foul events to the
@@ -176,6 +181,51 @@ def load_live_events(game_key: str) -> list:
     except Exception as exc:
         log.error("Failed to load live_events for %s: %s", game_key, exc)
         return []
+
+
+def order_events_by_game_clock(events: list) -> list:
+    """
+    Sort events into the order they happened on the court.
+
+    The feed's action_number is the order events were *entered*. Corrections
+    can arrive much later (an assist from Q3 logged after "game end"), and
+    walking them in entry order makes the period appear to jump backwards,
+    which opened phantom full-period stints. Sorting by (period, seconds
+    elapsed in the period, action_number) puts each event back where it
+    belongs; action_number still breaks ties within the same second, so a
+    substitution and the free throws around it keep their feed order.
+
+    An event with no period takes the period of the event entered before it.
+    Overtime is renumbered 5+ (see _normalize_period); the returned events are
+    copies carrying that period.
+    """
+    keyed = []
+    last_period = 1
+    for evt in sorted(events, key=lambda e: e.get("action_number") or 0):
+        period = _normalize_period(evt.get("period"), evt.get("period_type")) or last_period
+        last_period = period
+        clock = evt.get("clock")
+        elapsed = _period_duration(period) - _clock_to_secs(clock) if clock else _period_duration(period)
+        keyed.append(((period, elapsed, evt.get("action_number") or 0), {**evt, "period": period}))
+    keyed.sort(key=lambda pair: pair[0])
+    return [evt for _, evt in keyed]
+
+
+def _normalize_period(period, period_type=None) -> Optional[int]:
+    """
+    LiveStats restarts the period counter in overtime: OT1 arrives as period 1
+    with period_type "OVERTIME". Count overtime on from regulation (OT1 -> 5)
+    so it doesn't land on top of the first quarter. Values already above 4 are
+    left alone, so this is safe on rows that were renumbered at ingest.
+    Same rule as app/utils/periods.py normalize_period.
+    """
+    try:
+        number = int(period)
+    except (TypeError, ValueError):
+        return None
+    if str(period_type or "").upper() == "OVERTIME" and number <= 4:
+        return 4 + number
+    return number
 
 
 # ---------------------------------------------------------------------------
@@ -511,46 +561,58 @@ def _find_definitive_match(active: dict, player: dict) -> Optional[str]:
     return None
 
 
+def _roster_player(row: dict) -> dict:
+    return {
+        "player_id": row.get("player_id"),
+        "player_name": row.get("player_name"),
+        "shirt_number": row.get("shirt_number"),
+    }
+
+
 def _resolve_player_from_event(event: dict, roster: list) -> dict:
     """
-    Build a player dict from a live_events row, optionally enriching from roster.
-    Falls back to name-based roster lookup when shirt_number is absent (historical data).
+    Identify the roster (box-score) player behind a live_events row.
+
+    The event's own player_id is not trusted: play-by-play names are often
+    "X. Surname", and ingest can attach a separate stub player to them, which
+    split one player's minutes across two ids and broke on/off. The roster
+    entry carries the box-score player_id, so whenever the event matches a
+    roster row we take that row's identity wholesale.
+
+    Matching order: pno (the feed's per-game player number), then shirt
+    number, then a name match that only one roster player satisfies.
+    Falls back to the event's own fields when nothing on the roster matches.
     """
-    player = {
+    fallback = {
         "player_id": event.get("player_id"),
         "player_name": event.get("player_name"),
         "shirt_number": event.get("shirt_number") or event.get("pno"),
     }
     if not roster:
-        return player
+        return fallback
 
-    shirt = str(event.get("shirt_number") or "").strip()
-    evt_name = (event.get("player_name") or "").strip()
+    def norm(v) -> str:
+        return str(v or "").strip().lstrip("0") or ("0" if str(v or "").strip() else "")
 
-    # Try shirt-number match first (most reliable)
+    pno = norm(event.get("pno"))
+    if pno:
+        hits = [r for r in roster if norm(r.get("pno")) == pno]
+        if len(hits) == 1:
+            return _roster_player(hits[0])
+
+    shirt = norm(event.get("shirt_number"))
     if shirt:
-        for r in roster:
-            if str(r.get("shirt_number") or "").strip() == shirt:
-                if not player["player_id"]:
-                    player["player_id"] = r.get("player_id")
-                if not player["shirt_number"]:
-                    player["shirt_number"] = r.get("shirt_number")
-                if not player["player_name"]:
-                    player["player_name"] = r.get("player_name")
-                return player
+        hits = [r for r in roster if norm(r.get("shirt_number")) == shirt]
+        if len(hits) == 1:
+            return _roster_player(hits[0])
 
-    # Fall back to name match (handles historical events where shirt_number is NULL)
+    evt_name = (event.get("player_name") or "").strip()
     if evt_name:
-        for r in roster:
-            r_name = (r.get("player_name") or "").strip()
-            if _names_match(evt_name, r_name):
-                if not player["player_id"]:
-                    player["player_id"] = r.get("player_id")
-                if not player["shirt_number"]:
-                    player["shirt_number"] = r.get("shirt_number")
-                break
+        hits = [r for r in roster if _names_match(evt_name, r.get("player_name") or "")]
+        if len(hits) == 1:
+            return _roster_player(hits[0])
 
-    return player
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +651,28 @@ def build_lineups_for_game(
     if not events:
         log.warning("game=%s: no live_events, skipping lineup build", game_key)
         return False
+
+    all_stints = compute_stints(rosters_by_team, events, game_key, league_id)
+
+    log.info("game=%s: generated %d lineup stints", game_key, len(all_stints))
+
+    if not all_stints:
+        log.warning("game=%s: no stints generated, nothing to write", game_key)
+        return False
+
+    if dry_run:
+        log.info("game=%s: dry_run=True, skipping DB writes", game_key)
+        return True
+
+    return _write_stints(rosters_by_team, all_stints, game_key, league_id)
+
+
+def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id: str) -> list:
+    """
+    Reconstruct lineup stints from rosters and live_events, without touching
+    the database. Returns lineup_stints rows ready for insertion.
+    """
+    events = order_events_by_game_clock(events)
 
     # --- Build team state objects ---
     team_state: dict[str, _TeamLineup] = {}
@@ -829,25 +913,23 @@ def build_lineups_for_game(
     all_stints = []
     for tl in team_state.values():
         all_stints.extend(tl.completed_stints)
+    return all_stints
 
-    log.info("game=%s: generated %d lineup stints", game_key, len(all_stints))
 
-    if not all_stints:
-        log.warning("game=%s: no stints generated, nothing to write", game_key)
-        return False
-
-    if dry_run:
-        log.info("game=%s: dry_run=True, skipping DB writes", game_key)
-        return True
-
-    # --- Write to Supabase ---
+def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league_id: str) -> bool:
+    """Replace the game's lineup_stints and player_on_court_stints with *all_stints*."""
     db = _get_db()
 
     # Delete existing stints for this game first (idempotent).
     # Fetch IDs first then delete in small batches to avoid Supabase statement timeouts
-    # that occur when deleting many rows via a single filter query.
-    _delete_by_game_key(db, "lineup_stints", game_key)
-    _delete_by_game_key(db, "player_on_court_stints", game_key)
+    # that occur when deleting many rows via a single filter query. Player rows go
+    # first so the lineup_stints delete has nothing to cascade into. If anything is
+    # left behind, stop: inserting on top of old stints is how games ended up with
+    # two overlapping sets.
+    if not (_delete_by_game_key(db, "player_on_court_stints", game_key)
+            and _delete_by_game_key(db, "lineup_stints", game_key)):
+        log.error("game=%s: could not clear old stints; not writing new ones", game_key)
+        return False
 
     # Insert lineup_stints in chunks
     _bulk_insert(db, "lineup_stints", all_stints, game_key)
@@ -921,6 +1003,12 @@ def build_lineups_for_game(
 
     _bulk_insert(db, "player_on_court_stints", player_rows, game_key)
 
+    # Two builds of the same game running at once (the worker and an admin
+    # backfill, say) both delete, then both insert, leaving every stint twice.
+    # Whichever build finishes last removes the copies; both keep the same row
+    # (the lowest id), so they agree on what survives.
+    _remove_duplicate_stints(db, game_key)
+
     log.info(
         "game=%s: wrote %d lineup stints, %d player on-court rows",
         game_key, len(all_stints), len(player_rows),
@@ -928,16 +1016,63 @@ def build_lineups_for_game(
     return True
 
 
+def _remove_duplicate_stints(db, game_key: str) -> None:
+    try:
+        stints = (
+            db.table("lineup_stints")
+            .select("id, team_id, period, start_action, end_action, start_game_secs, end_game_secs, lineup_key")
+            .eq("game_key", game_key)
+            .execute()
+        ).data or []
+        seen: dict = {}
+        extra_stints = []
+        for s in sorted(stints, key=lambda r: str(r["id"])):
+            key = (s["team_id"], s["period"], s["start_action"], s["end_action"],
+                   s["start_game_secs"], s["end_game_secs"], s["lineup_key"])
+            if key in seen:
+                extra_stints.append(s["id"])
+            else:
+                seen[key] = s["id"]
+        # player_on_court_stints rows of a removed stint go with it (ON DELETE CASCADE).
+        for i in range(0, len(extra_stints), 50):
+            db.table("lineup_stints").delete().in_("id", extra_stints[i:i + 50]).execute()
+
+        players = (
+            db.table("player_on_court_stints")
+            .select("id, stint_id, player_id, player_name")
+            .eq("game_key", game_key)
+            .execute()
+        ).data or []
+        seen_players = set()
+        extra_players = []
+        for p in sorted(players, key=lambda r: str(r["id"])):
+            key = (p["stint_id"], p["player_id"] or p["player_name"])
+            if key in seen_players:
+                extra_players.append(p["id"])
+            else:
+                seen_players.add(key)
+        for i in range(0, len(extra_players), 50):
+            db.table("player_on_court_stints").delete().in_("id", extra_players[i:i + 50]).execute()
+
+        if extra_stints or extra_players:
+            log.warning(
+                "game=%s: removed %d duplicate stints and %d duplicate player rows from a concurrent build",
+                game_key, len(extra_stints), len(extra_players),
+            )
+    except Exception as exc:
+        log.error("game=%s: duplicate stint check failed: %s", game_key, exc)
+
+
 # ---------------------------------------------------------------------------
 # Utility: bulk insert / delete with chunking
 # ---------------------------------------------------------------------------
 
-def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50):
+def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50) -> bool:
     """
     Delete all rows for game_key from table using ID-based batch deletes.
     A single DELETE ... WHERE game_key=X can time out in Supabase when the
     table has many rows; fetching IDs first and deleting in small batches is
-    much more reliable.
+    much more reliable. Returns False if any row could not be deleted.
     """
     try:
         id_res = (
@@ -949,20 +1084,20 @@ def _delete_by_game_key(db, table: str, game_key: str, chunk_size: int = 50):
         ids = [r["id"] for r in (id_res.data or [])]
     except Exception as exc:
         log.warning("game=%s: could not fetch IDs from %s for deletion: %s", game_key, table, exc)
-        return
+        return False
 
-    if not ids:
-        return
-
+    ok = True
     for i in range(0, len(ids), chunk_size):
         batch = ids[i:i + chunk_size]
         try:
             db.table(table).delete().in_("id", batch).execute()
         except Exception as exc:
+            ok = False
             log.error(
                 "game=%s: failed deleting batch from %s (offset=%d): %s",
                 game_key, table, i, exc,
             )
+    return ok
 
 
 def _bulk_insert(db, table: str, rows: list, game_key: str, chunk_size: int = 200):
