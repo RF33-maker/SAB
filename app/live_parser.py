@@ -2,6 +2,7 @@
 import time
 import requests
 from app.utils.json_parser import (
+    feed_teams,
     supabase,
     normalize_team_name,
     normalize_player_name,
@@ -103,7 +104,7 @@ def process_game(game):
         print(f"⚠️ No data for {game_key}")
         return
 
-    teams = data.get("tm", {})
+    teams = feed_teams(data)
     plays = data.get("Plays") or data.get("plays") or []
     
     if not plays and not teams:

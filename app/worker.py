@@ -42,7 +42,7 @@ from time import perf_counter
 from supabase import create_client
 from supabase.lib.client_options import ClientOptions
 
-from app.utils.json_parser import parse_and_store_game, backfill_orphaned_schedule_rows
+from app.utils.json_parser import parse_and_store_game, backfill_orphaned_schedule_rows, feed_teams
 from app.utils.compute_advanced_stats import compute_advanced_stats
 from app.utils.reconcile import RECONCILE_WINDOW, feed_fingerprint, reconcile_next_poll
 
@@ -209,7 +209,7 @@ def extract_numeric_id(livestats_url: str | None) -> str | None:
 
 
 def _scores_differ(data: dict) -> bool:
-    teams = data.get("tm") or {}
+    teams = feed_teams(data)
     try:
         scores = {int(t.get("tot_sPoints")) for t in teams.values() if t.get("tot_sPoints") not in (None, "")}
     except (TypeError, ValueError):

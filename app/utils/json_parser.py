@@ -187,6 +187,17 @@ PBP_FIELD_MAP = {
 # ----------------------------
 # Helpers
 # ----------------------------
+def feed_teams(data: dict) -> dict:
+    """The two teams in a LiveStats feed ("1" and "2").
+
+    Finished games' feeds also put league-leader blocks under "tm"
+    ("sPointsAverage", ...); treating those as teams created nameless teams
+    and failed the final parse.
+    """
+    tm = data.get("tm") or {}
+    return {side: t for side, t in tm.items() if side in ("1", "2") and isinstance(t, dict)}
+
+
 def build_data_url(numeric_id: str) -> str:
     return f"https://fibalivestats.dcd.shared.geniussports.com/data/{numeric_id}/data.json"
 
@@ -770,7 +781,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         print(f"⏭️  No stats available yet ({e}) - game added to schedule")
         return
 
-    teams = data.get("tm", {})
+    teams = feed_teams(data)
 
     # --- Update game_schedule with attendance and officials if present ---
     _sched_extra = {}
