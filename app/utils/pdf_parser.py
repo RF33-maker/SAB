@@ -463,6 +463,33 @@ def _safe_float(val):
 # Header Parsing
 # ---------------------------------------------------------------------------
 
+# Lines that come after the team names in the header and are never a team name:
+# the quarter grid, the scoring-by-interval table, coach labels and the box score
+# section headers. Seeing one means the away team was not on a line of its own.
+_HEADER_LABEL_RE = re.compile(
+    r"^(Q1\b|Scoring by|Coach\b|Assistant Coach|Head Coach|Quarter Starters|Team/Coach|Starters\b)",
+    re.IGNORECASE,
+)
+_HEADER_SECTION_RE = re.compile(r"\([A-Z0-9]{2,5}\)")
+# Header fields that can share a line with a team name ("... 66 – 56 Game Duration: 01:39").
+_HEADER_FIELD_RE = re.compile(r"\s*(Report Generated|Game Duration|Game No\.?|Start time)\s*:.*$")
+
+
+def _clean_away_candidate(text: str):
+    """The away team name in `text`; "" when only header fields are left (look
+    further), None when it is a label or other header line (stop looking)."""
+    c = _HEADER_FIELD_RE.sub("", text or "").strip()
+    if not c:
+        return ""
+    if c.endswith(":") or c.startswith("("):
+        return None
+    if _HEADER_LABEL_RE.match(c) or _HEADER_SECTION_RE.search(c):
+        return None
+    if re.search(r"\d+\s+[–\-]\s+\d+", c):
+        return None
+    return c
+
+
 def _detect_report_type(first_page_text: str) -> str:
     """Return canonical report type key or 'unknown'."""
     for label, key in REPORT_TYPES.items():
@@ -525,11 +552,12 @@ def _parse_header(first_page_text: str) -> dict:
     m = re.search(r"Game Duration\s*:\s*([\d:]+)", first_page_text)
     meta["game_duration"] = m.group(1) if m else None
 
-    # Score line: "City ... WEABL 66 – 56" + possible "Report Generated: ..."
-    # home team is on the first score line, away team on next line
+    # Score line. Short names fit on one line with both teams
+    # ("Team 3 66 – 84 Team 4"); long ones wrap, leaving the away team on a
+    # later line ("City ... WEABL 66 – 56", "Report Generated: ...", "Copleston ...").
     score_line = None
     for line in lines:
-        m = re.search(r"(.+?)\s+(\d+)\s+[–\-]\s+(\d+)", line)
+        m = re.search(r"(.+?)\s+(\d+)\s+[–\-]\s+(\d+)(.*)$", line)
         if m and not score_line:
             score_line = m
             meta["home_team_full"] = m.group(1).strip()
@@ -551,15 +579,18 @@ def _parse_header(first_page_text: str) -> dict:
     else:
         meta["game_key"] = None
 
-    # Away team: first non-empty line after the score line that contains no score/digits
-    # (skip "Report Generated:" line which appears between them)
+    # Away team: after the score on the same line, else the first line after it
+    # that isn't "Report Generated", the quarter scores or the officials. Stop at
+    # the quarter grid or coach labels: past them the names are box score
+    # labels, which is how "Coach:" and "Quarter Starters:" became away teams.
+    # Names may contain digits ("Team Gold 15U", "19+ Team 2").
     if score_line:
+        meta["away_team_full"] = _clean_away_candidate(score_line.group(4)) or None
         sl_idx = next(
             (i for i, l in enumerate(lines) if re.search(r"\d+\s+[–\-]\s+\d+", l)),
             None,
         )
-        meta["away_team_full"] = None
-        if sl_idx is not None:
+        if meta["away_team_full"] is None and sl_idx is not None:
             for candidate_line in lines[sl_idx + 1 :]:
                 c = candidate_line.strip()
                 if not c:
@@ -568,13 +599,13 @@ def _parse_header(first_page_text: str) -> dict:
                     continue
                 if re.search(r"\d+\s+[–\-]\s+\d+", c):
                     continue
-                # Strip inline "Report Generated: ..." suffix before digit check
-                c_clean = re.sub(r"\s+Report Generated:.*$", "", c).strip()
-                if not c_clean or c_clean.startswith("Report Generated"):
+                c_clean = _clean_away_candidate(c)
+                if c_clean == "":
                     continue
-                if not re.search(r"\d", c_clean):
-                    meta["away_team_full"] = c_clean
+                if c_clean is None:
                     break
+                meta["away_team_full"] = c_clean
+                break
     else:
         meta["home_team_full"] = None
         meta["away_team_full"] = None
