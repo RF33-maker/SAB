@@ -31,6 +31,8 @@ from app.utils.json_parser import (
     get_or_create_team,
     get_or_create_player,
     normalize_team_name,
+    _escape_ilike,
+    _slugify,
 )
 from app.utils.compute_advanced_stats import compute_advanced_stats
 
@@ -1848,6 +1850,163 @@ def _parse_rotations(pdf, meta: dict, league_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Which competition an upload goes into
+# ---------------------------------------------------------------------------
+# A league admin can list the PDF titles a competition accepts
+# (competition_upload_names), so a title that differs from the competition's
+# own name still lands in the right place. REBA SL splits a stop into one
+# competition per age group while the PDFs carry one title for the stop
+# ("REBA SL Bristol stop FIBA"); the age group in the team names
+# ("Team Gold 15U") picks between them.
+
+_AGE_GROUP_RE = re.compile(r"(?<![\w+])(U\d{1,2}[WM]?|\d{1,2}U|\d{1,2}\+)(?![\w+])", re.IGNORECASE)
+
+
+def _age_group_of(team_names) -> str | None:
+    """The age group every team name carries ("Team Gold 15U" -> "15U"), else None."""
+    found = set()
+    for name in team_names:
+        m = _AGE_GROUP_RE.search(name or "")
+        if not m:
+            return None
+        found.add(m.group(1).upper())
+    return found.pop() if len(found) == 1 else None
+
+
+def _pick_upload_target(candidates: list, age_group: str | None) -> str | None:
+    """candidates: competitions sharing the PDF title ({league_id, age_group}).
+    A competition for a different age group never wins; of the rest, one wins
+    outright, or the one for the teams' age group. None when still unclear."""
+    if age_group:
+        candidates = [
+            c for c in candidates
+            if not c.get("age_group") or c["age_group"].upper() == age_group
+        ]
+    if len(candidates) == 1:
+        return candidates[0]["league_id"]
+    if age_group:
+        exact = [c for c in candidates if (c.get("age_group") or "").upper() == age_group]
+        if len(exact) == 1:
+            return exact[0]["league_id"]
+    return None
+
+
+def _family_rows(db, root_id: str) -> list:
+    """Every competition under root_id (not root_id itself)."""
+    seen, out, frontier = {root_id}, [], [root_id]
+    while frontier:
+        rows = (
+            db.table("competitions").select("league_id, name, age_group, stop, parent_league_id")
+            .in_("parent_league_id", frontier).execute().data or []
+        )
+        rows = [r for r in rows if r["league_id"] not in seen]
+        seen.update(r["league_id"] for r in rows)
+        out.extend(rows)
+        frontier = [r["league_id"] for r in rows]
+    return out
+
+
+def _upload_name_candidates(db, title: str) -> list:
+    """Competitions that list this PDF title, with their age group."""
+    try:
+        rows = (
+            db.table("competition_upload_names").select("league_id")
+            .ilike("name", _escape_ilike(title.strip()))
+            .execute().data or []
+        )
+    except Exception as e:
+        # The table arrives with a website migration; until then, match by name only.
+        log.warning("competition_upload_names lookup failed: %s", e)
+        return []
+    ids = list({r["league_id"] for r in rows})
+    if not ids:
+        return []
+    comps = db.table("competitions").select("league_id, age_group").in_("league_id", ids).execute().data or []
+    return comps
+
+
+def _create_child_competition(db, parent: dict, title: str, age_group: str | None, user_id: str | None) -> str:
+    """A new competition under a season for a title it hasn't seen, one per age
+    group, recorded under the title so the next upload finds it."""
+    name = f"{title} ({age_group})" if age_group else title
+    slug = _slugify(name)
+    if db.table("competitions").select("league_id").eq("slug", slug).limit(1).execute().data:
+        import uuid as _uuid
+        slug = f"{slug}-{str(_uuid.uuid4())[:8]}"
+    row = {
+        "name": name,
+        "slug": slug,
+        "parent_league_id": parent["league_id"],
+        "season": parent.get("season"),
+        "competition_id": parent.get("competition_id"),
+        "is_public": parent.get("is_public"),
+        "age_group": age_group,
+    }
+    if user_id:
+        row["created_by"] = user_id
+    new_id = db.table("competitions").insert(row).execute().data[0]["league_id"]
+    db.table("competition_upload_names").insert(
+        {"league_id": new_id, "name": title, **({"added_by": user_id} if user_id else {})}
+    ).execute()
+    return new_id
+
+
+def _resolve_upload_competition(db, title: str, selected_id: str | None, team_names, user_id: str | None) -> dict:
+    """Where a PDF goes. Returns {"league_id", "created"} or {"error"}.
+
+    1. A competition that lists the PDF title, inside the picked competition's
+       family when one was picked; the teams' age group settles a shared title.
+    2. A competition in the picked family named exactly like the title.
+    3. A picked season run as stops (its competitions carry an age group or a
+       stop number) and a title it hasn't seen: a new competition under it for
+       this title and age group.
+    4. Otherwise the picked competition (a typed title can't spawn a duplicate).
+    5. Nothing picked: find or create a competition by the title (as before).
+    """
+    age_group = _age_group_of(team_names)
+    has_title = bool(title) and title.strip().lower() != "unknown"
+    selected = None
+    family = None
+    if selected_id:
+        found = (
+            db.table("competitions")
+            .select("league_id, name, season, competition_id, is_public, age_group")
+            .eq("league_id", selected_id).limit(1).execute().data
+        )
+        if not found:
+            return {"error": f"league_id {selected_id} does not exist"}
+        selected = found[0]
+        family = [selected] + _family_rows(db, selected_id)
+
+    if has_title:
+        candidates = _upload_name_candidates(db, title)
+        if family is not None:
+            family_ids = {c["league_id"] for c in family}
+            candidates = [c for c in candidates if c["league_id"] in family_ids]
+        target = _pick_upload_target(candidates, age_group)
+        if target:
+            return {"league_id": target, "created": False}
+
+    if not selected:
+        return {"league_id": get_or_create_league(title, user_id), "created": False}
+
+    if has_title:
+        named = [c for c in family if (c.get("name") or "").strip().lower() == title.strip().lower()]
+        target = _pick_upload_target(named, age_group)
+        if target:
+            return {"league_id": target, "created": False}
+        runs_as_stops = any(
+            c.get("age_group") or c.get("stop") is not None
+            for c in family if c.get("parent_league_id") == selected_id
+        )
+        if runs_as_stops:
+            new_id = _create_child_competition(db, selected, title, age_group, user_id)
+            return {"league_id": new_id, "created": True}
+
+    return {"league_id": selected_id, "created": False}
+
+
+# ---------------------------------------------------------------------------
 # Main Entry Point
 # ---------------------------------------------------------------------------
 
@@ -1922,18 +2081,21 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
                     competition = competition.replace(suffix, "")
                 league_name = competition.strip() or "Unknown"
 
-            if league_id:
-                found = (
-                    _get_pdf_ref_db().table("competitions")
-                    .select("league_id,name").eq("league_id", league_id).limit(1).execute()
-                )
-                if not found.data:
-                    return {"error": f"league_id {league_id} does not exist"}
+            resolved = _resolve_upload_competition(
+                _get_pdf_ref_db(), league_name, league_id,
+                [meta.get("home_team_full") or "", meta.get("away_team_full") or ""], user_id,
+            )
+            if "error" in resolved:
+                return {"error": resolved["error"]}
+            league_id = resolved["league_id"]
+            found = (
+                _get_pdf_ref_db().table("competitions")
+                .select("name").eq("league_id", league_id).limit(1).execute()
+            )
+            if found.data:
                 league_name = found.data[0]["name"]
 
             print(f"🏀 PDF parse: type={report_type}, game_key={game_key}, league={league_name}")
-
-            league_id = league_id or get_or_create_league(league_name, user_id)
 
             counts = {}
 
@@ -1979,6 +2141,9 @@ def parse_pdf(pdf_file, league_name: str, provided_game_key: str = None, user_id
                 "away_team": meta.get("away_team_full"),
                 "home_score": meta.get("home_score"),
                 "away_score": meta.get("away_score"),
+                "league_id": league_id,
+                "league_name": league_name,
+                "created_league_ids": [league_id] if resolved["created"] else [],
                 "counts": counts,
             }
 
