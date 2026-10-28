@@ -13,7 +13,9 @@ Fixtures:
       quarter, which leaves 40 seconds with four men on court and ~50s of minutes
       error that no ordering can recover; the tolerances below allow for that.
 
-Expected values come from each game's official box score.
+Expected values come from each game's official box score. Shots keep the
+feed's qualifiers ("2ndchance", "fromturnover"), which LiveStats works out
+from its own view of possessions.
 """
 import collections
 import json
@@ -25,6 +27,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.utils.lineup_builder import (  # noqa: E402
+    _PossessionTracker,
     _resolve_player_from_event,
     build_context_rows,
     compute_stints,
@@ -98,6 +101,53 @@ def test_possessions_alternate_between_the_teams(game_key):
         assert abs(total[t]["possessions_for"] - total[t]["possessions_against"]) <= periods
     # Every point scored belongs to a lineup that had a possession.
     assert not [s for s in stints if s["points_for"] and not s["possessions_for"]]
+
+
+@pytest.mark.parametrize("game_key", GAMES)
+def test_possessions_match_the_feeds_second_chance_and_turnover_tags(game_key, monkeypatch):
+    """
+    Follow the builder's possessions and, at each shot, ask whether this
+    possession has had an offensive rebound (2ndchance) and whether it began
+    with the other side's turnover (fromturnover). Over two full seasons this
+    matches the feed on more than 99% of shots; the misses are feed glitches
+    (one team logged scoring twice in a row, say), so allow 3% here.
+    """
+    state = {"evt": None, "oreb": False, "from_turnover": False}
+    shots = []
+    real_event, real_end, real_take = _PossessionTracker.event, _PossessionTracker._end, _PossessionTracker._take_ball
+    real_period_end = _PossessionTracker.end_of_period
+
+    def event(self, evt, team_id, nxt):
+        state["evt"] = evt
+        return real_event(self, evt, team_id, nxt)
+
+    def end(self, team_id, stints=None):
+        state.update(oreb=False, from_turnover=state["evt"]["action_type"] == "turnover")
+        return real_end(self, team_id, stints)
+
+    def take_ball(self, team_id):
+        real_take(self, team_id)
+        evt = state["evt"]
+        if evt["action_type"] in ("2pt", "3pt"):
+            shots.append((set(evt.get("qualifiers") or []), state["oreb"], state["from_turnover"]))
+        elif evt["action_type"] == "rebound":
+            state["oreb"] = True
+
+    def period_end(self):
+        real_period_end(self)
+        state.update(oreb=False, from_turnover=False)
+
+    monkeypatch.setattr(_PossessionTracker, "event", event)
+    monkeypatch.setattr(_PossessionTracker, "_end", end)
+    monkeypatch.setattr(_PossessionTracker, "_take_ball", take_ball)
+    monkeypatch.setattr(_PossessionTracker, "end_of_period", period_end)
+    load(game_key)
+
+    assert len(shots) > 100
+    second_chance = sum(("2ndchance" in tags) == oreb for tags, oreb, _ in shots)
+    from_turnover = sum(("fromturnover" in tags) == turnover for tags, _, turnover in shots)
+    assert second_chance >= 0.97 * len(shots)
+    assert from_turnover >= 0.97 * len(shots)
 
 
 @pytest.mark.parametrize("game_key", GAMES)
