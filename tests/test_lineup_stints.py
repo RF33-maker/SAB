@@ -85,6 +85,22 @@ def test_stint_points_add_up_to_the_final_score(game_key):
 
 
 @pytest.mark.parametrize("game_key", GAMES)
+def test_possessions_alternate_between_the_teams(game_key):
+    _, stints = load(game_key)
+    teams = sorted({s["team_id"] for s in stints})
+    periods = len({s["period"] for s in stints})
+    total = {t: {k: sum(s[k] for s in stints if s["team_id"] == t)
+                 for k in ("possessions_for", "possessions_against")} for t in teams}
+    assert total[teams[0]]["possessions_for"] == total[teams[1]]["possessions_against"]
+    assert total[teams[1]]["possessions_for"] == total[teams[0]]["possessions_against"]
+    # The ball alternates, so each period can leave one team at most one ahead.
+    for t in teams:
+        assert abs(total[t]["possessions_for"] - total[t]["possessions_against"]) <= periods
+    # Every point scored belongs to a lineup that had a possession.
+    assert not [s for s in stints if s["points_for"] and not s["possessions_for"]]
+
+
+@pytest.mark.parametrize("game_key", GAMES)
 def test_every_player_keeps_one_id_and_their_official_minutes(game_key):
     data, stints = load(game_key)
     roster_ids = {r["player_id"] for r in data["rosters"]}

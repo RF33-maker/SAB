@@ -16,7 +16,10 @@ Algorithm overview:
   4. Open a new stint when the game starts or when a substitution completes.
   5. Close the current stint on substitution, period boundary, or end of game.
   6. Attribute scoring, shooting, rebound, turnover, and foul events to the
-     correct team's active lineup (and opponent's lineup for points_against).
+     correct team's active lineup (and opponent's lineup for points_against),
+     and split the game into individual possessions (_PossessionTracker), so
+     each stint's possessions and points cover the same trips down the floor.
+     Free throws go to the lineups that were on court for the foul.
   7. Write completed lineup_stints rows to Supabase.
   8. Expand each stint into per-player rows in player_on_court_stints.
 
@@ -237,6 +240,22 @@ OPP_STAT_KEYS = (
     "fg2_made", "fg2_attempted", "fg3_made", "fg3_attempted", "ft_made", "ft_attempted",
     "oreb", "dreb", "assists", "turnovers", "steals", "blocks", "fouls",
 )
+STAT_KEYS = ("points_for", "points_against") + OPP_STAT_KEYS + ("possessions_for", "possessions_against")
+
+# Fouls whose free throws come with the ball back (technicals) or are followed
+# by a throw-in for the shooting team (unsportsmanlike and worse), so a made
+# last free throw does not hand the ball over.
+BALL_KEEPING_FOULS = {
+    "technical", "coachtechnical", "benchtechnical", "disruptive",
+    "unsportsmanlike", "flagrant", "disqualifying",
+}
+
+
+def _new_stats() -> dict:
+    """Running totals for one stint; becomes the stint row when it closes."""
+    stats = {k: 0 for k in STAT_KEYS}
+    stats.update({f"opp_{k}": 0 for k in OPP_STAT_KEYS})
+    return stats
 
 
 class _TeamLineup:
@@ -258,8 +277,11 @@ class _TeamLineup:
         self.stint_start_clock: Optional[str] = None
         self.stint_period: Optional[int] = None
 
-        # Running stats for current stint
-        self._reset_stats()
+        # Running stats for the current stint. The dict itself becomes the
+        # stint row when the stint closes, so anyone holding a reference (a
+        # free-throw trip crediting the lineup that was on for the foul) still
+        # updates the right stint after a substitution has closed it.
+        self.stats: dict = _new_stats()
 
         # Completed stints (list of dicts ready for DB insertion)
         self.completed_stints: list = []
@@ -270,25 +292,7 @@ class _TeamLineup:
     # ------------------------------------------------------------------
 
     def _reset_stats(self):
-        self.pts_for = 0
-        self.pts_against = 0
-        self.fg2_made = 0
-        self.fg2_attempted = 0
-        self.fg3_made = 0
-        self.fg3_attempted = 0
-        self.ft_made = 0
-        self.ft_attempted = 0
-        self.oreb = 0
-        self.dreb = 0
-        self.assists = 0
-        self.turnovers = 0
-        self.fouls = 0
-        self.steals = 0
-        self.blocks = 0
-        self.possessions_for = 0
-        self.possessions_against = 0
-        # What the opposing team did while this lineup was on court.
-        self.opp = {k: 0 for k in OPP_STAT_KEYS}
+        self.stats = _new_stats()
 
     def _player_list(self) -> list:
         return list(self.active.values())
@@ -338,7 +342,8 @@ class _TeamLineup:
                 self.stint_start_action, action,
             )
 
-        stint = {
+        stint = self.stats
+        stint.update({
             "game_key": self.game_key,
             "league_id": self.league_id,
             "team_id": self.team_id,
@@ -353,26 +358,8 @@ class _TeamLineup:
             "start_game_secs": self.stint_start_secs,
             "end_game_secs": game_secs,
             "seconds_played": secs_played,
-            "points_for": self.pts_for,
-            "points_against": self.pts_against,
-            "fg2_made": self.fg2_made,
-            "fg2_attempted": self.fg2_attempted,
-            "fg3_made": self.fg3_made,
-            "fg3_attempted": self.fg3_attempted,
-            "ft_made": self.ft_made,
-            "ft_attempted": self.ft_attempted,
-            "oreb": self.oreb,
-            "dreb": self.dreb,
-            "assists": self.assists,
-            "turnovers": self.turnovers,
-            "fouls": self.fouls,
-            "steals": self.steals,
-            "blocks": self.blocks,
-            "possessions_for": self.possessions_for,
-            "possessions_against": self.possessions_against,
             "is_valid_lineup": is_valid,
-            **{f"opp_{k}": v for k, v in self.opp.items()},
-        }
+        })
         self.completed_stints.append(stint)
 
         self._reset_stats()
@@ -442,61 +429,35 @@ class _TeamLineup:
     # ------------------------------------------------------------------
     # Stat attribution
 
-    def add_stat(self, action_type: str, sub_type: str, success: bool, scoring: bool, pts: int = 0):
-        action_type = (action_type or "").lower()
-        sub_type = (sub_type or "").lower()
+    def add_stat(self, action_type: str, sub_type: str, success: bool, scoring: bool, pts: int = 0,
+                 stats: Optional[dict] = None):
+        """Record this team's event, on the current stint unless *stats* names another."""
+        _add_stat(self.stats if stats is None else stats, "", action_type, sub_type, success)
+        if action_type in ("2pt", "3pt", "freethrow") and success and scoring:
+            (self.stats if stats is None else stats)["points_for"] += pts or {
+                "2pt": 2, "3pt": 3, "freethrow": 1}[action_type]
 
-        if action_type == "2pt":
-            self.fg2_attempted += 1
-            if success:
-                self.fg2_made += 1
-                if scoring:
-                    self.pts_for += pts or 2
-        elif action_type == "3pt":
-            self.fg3_attempted += 1
-            if success:
-                self.fg3_made += 1
-                if scoring:
-                    self.pts_for += pts or 3
-        elif action_type == "freethrow":
-            self.ft_attempted += 1
-            if success:
-                self.ft_made += 1
-                if scoring:
-                    self.pts_for += pts or 1
-        elif action_type == "rebound":
-            if sub_type == "offensive":
-                self.oreb += 1
-            else:
-                self.dreb += 1
-        elif action_type == "assist":
-            self.assists += 1
-        elif action_type == "turnover":
-            self.turnovers += 1
-        elif action_type == "foul":
-            self.fouls += 1
-        elif action_type == "steal":
-            self.steals += 1
-        elif action_type == "block":
-            self.blocks += 1
+    def add_points_against(self, pts: int, stats: Optional[dict] = None):
+        (self.stats if stats is None else stats)["points_against"] += pts
 
-    def add_points_against(self, pts: int):
-        self.pts_against += pts
+    def add_opp_stat(self, action_type: str, sub_type: str, success: bool, stats: Optional[dict] = None):
+        """Record an opponent event against this team's stint."""
+        _add_stat(self.stats if stats is None else stats, "opp_", action_type, sub_type, success)
 
-    def add_opp_stat(self, action_type: str, sub_type: str, success: bool):
-        """Record an opponent event against this team's current stint."""
-        action_type = (action_type or "").lower()
-        sub_type = (sub_type or "").lower()
-        if action_type in ("2pt", "3pt", "freethrow"):
-            prefix = {"2pt": "fg2", "3pt": "fg3", "freethrow": "ft"}[action_type]
-            self.opp[f"{prefix}_attempted"] += 1
-            if success:
-                self.opp[f"{prefix}_made"] += 1
-        elif action_type == "rebound":
-            self.opp["oreb" if sub_type == "offensive" else "dreb"] += 1
-        elif action_type in ("assist", "turnover", "steal", "block", "foul"):
-            self.opp[{"assist": "assists", "turnover": "turnovers", "steal": "steals",
-                      "block": "blocks", "foul": "fouls"}[action_type]] += 1
+
+def _add_stat(stats: dict, prefix: str, action_type: str, sub_type: str, success: bool) -> None:
+    action_type = (action_type or "").lower()
+    sub_type = (sub_type or "").lower()
+    if action_type in ("2pt", "3pt", "freethrow"):
+        shot = {"2pt": "fg2", "3pt": "fg3", "freethrow": "ft"}[action_type]
+        stats[f"{prefix}{shot}_attempted"] += 1
+        if success:
+            stats[f"{prefix}{shot}_made"] += 1
+    elif action_type == "rebound":
+        stats[prefix + ("oreb" if sub_type == "offensive" else "dreb")] += 1
+    elif action_type in ("assist", "turnover", "steal", "block", "foul"):
+        stats[prefix + {"assist": "assists", "turnover": "turnovers", "steal": "steals",
+                        "block": "blocks", "foul": "fouls"}[action_type]] += 1
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +602,127 @@ def _resolve_player_from_event(event: dict, roster: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Possessions
+# ---------------------------------------------------------------------------
+
+class _PossessionTracker:
+    """
+    Splits the play-by-play into individual possessions and credits each one,
+    with its points, to the lineups on court for it.
+
+    The ball changes hands on a made field goal, a turnover, a defensive
+    rebound, or a made last free throw. An offensive rebound keeps it. Anything
+    else that shows the other team with the ball (a held ball going their way,
+    say) ends the possession too, so possessions always alternate: when the
+    feed misses or misorders an event, a possession with nothing logged in it
+    still counts, rather than one team getting two in a row.
+
+    Free throws, and the possession they end, go to the lineups that were on
+    court when the foul was called. Substitutions happen at exactly that dead
+    ball, so crediting whoever is on for the shots would give the incoming
+    lineup points it had no possession for.
+
+    Not possession changes:
+      - a single free throw: an and-one (the scorer's possession already
+        ended on the make) or a technical,
+      - technical free throws, and free throws for unsportsmanlike and worse
+        fouls, which come with the ball back,
+      - a team rebound between two free throws.
+    A possession still open at the end of a period counts if the team did
+    something with it; a team that just inbounded and ran the clock out has
+    nothing to credit.
+    """
+
+    def __init__(self, team_state: dict):
+        self.teams = team_state
+        self.offense: Optional[str] = None
+        self.active = False  # the offense has done something this possession
+        # Last foul by each team: (stints on court per team, ball stays with shooters)
+        self.last_foul: dict = {}
+
+    def _other(self, team_id: str) -> Optional[str]:
+        return next((t for t in self.teams if t != team_id), None)
+
+    def _on_court(self) -> dict:
+        return {t: tl.stats for t, tl in self.teams.items()}
+
+    def _end(self, team_id: str, stints: Optional[dict] = None):
+        stints = stints or self._on_court()
+        stints[team_id]["possessions_for"] += 1
+        other = self._other(team_id)
+        if other:
+            stints[other]["possessions_against"] += 1
+        self.offense, self.active = other, False
+
+    def _take_ball(self, team_id: str):
+        """team_id is shown with the ball; if the other side had it, their possession is over."""
+        if self.offense == self._other(team_id):
+            self._end(self.offense)
+        self.offense, self.active = team_id, True
+
+    def end_of_period(self):
+        if self.offense and self.active:
+            self._end(self.offense)
+        self.offense, self.active = None, False
+        self.last_foul = {}
+
+    def event(self, evt: dict, team_id: str, nxt: Optional[dict]):
+        action_type = (evt.get("action_type") or "").lower()
+        sub_type = (evt.get("sub_type") or "").lower()
+        success = bool(evt.get("success"))
+        other = self._other(team_id)
+
+        # Box stats: free throws go to the lineups on for the foul.
+        stints = self._on_court()
+        foul = self.last_foul.get(other) if action_type == "freethrow" else None
+        if foul:
+            stints = foul[0]
+        pts = {"2pt": 2, "3pt": 3, "freethrow": 1}.get(action_type, 0) \
+            if success and evt.get("scoring") else 0
+        self.teams[team_id].add_stat(action_type, sub_type, success, bool(evt.get("scoring")), pts,
+                                     stats=stints[team_id])
+        if other:
+            self.teams[other].add_opp_stat(action_type, sub_type, success, stats=stints[other])
+            if pts:
+                self.teams[other].add_points_against(pts, stats=stints[other])
+
+        # Possessions
+        if action_type == "foul":
+            self.last_foul[team_id] = (self._on_court(), sub_type in BALL_KEEPING_FOULS)
+        elif action_type in ("2pt", "3pt"):
+            self._take_ball(team_id)
+            if success:
+                self._end(team_id)
+        elif action_type == "turnover":
+            self._take_ball(team_id)
+            self._end(team_id)
+        elif action_type == "freethrow":
+            shot, _, trip = sub_type.partition("of")
+            # A single free throw is an and-one (the possession already ended
+            # on the make) or a technical; neither moves the ball.
+            keeps_ball = trip == "1" or bool(foul and foul[1])
+            if self.offense != team_id:
+                if keeps_ball:
+                    return  # the ball is the other side's and stays there
+                # Fouled while the other side had the ball (a loose ball, say),
+                # or the feed missed the change: these shots are a new possession.
+                self._take_ball(team_id)
+            self.active = True
+            if success and shot and shot == trip and not keeps_ball:
+                self._end(team_id, stints)
+        elif action_type == "rebound":
+            if not (evt.get("player_id") or evt.get("pno")) and nxt \
+                    and (nxt.get("action_type") or "").lower() == "freethrow":
+                return  # dead-ball team rebound between free throws
+            if sub_type == "offensive":
+                self._take_ball(team_id)
+            else:
+                if self.offense == other:
+                    self._end(other)
+                self.offense, self.active = team_id, False
+
+
+# ---------------------------------------------------------------------------
 # Main lineup reconstruction function
 # ---------------------------------------------------------------------------
 
@@ -753,26 +835,9 @@ def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id
 
     # --- Walk events ---
     current_period = first_event.get("period") if first_event else 1
+    poss = _PossessionTracker(team_state)
 
-    # Track which team currently has the ball so we can close open possessions
-    # at period boundaries and game end.  None = unknown (e.g. game start before
-    # first possession-changing event).
-    current_possessor_id: Optional[str] = None
-
-    def _close_open_possession():
-        """
-        If a possession is in-flight (current_possessor_id is known), attribute
-        it to the active stints and return True.  Used at period/game boundaries.
-        """
-        if current_possessor_id and current_possessor_id in team_state:
-            team_state[current_possessor_id].possessions_for += 1
-            for _tid, _tl in team_state.items():
-                if _tid != current_possessor_id:
-                    _tl.possessions_against += 1
-            return True
-        return False
-
-    for evt in events:
+    for i, evt in enumerate(events):
         action_type = (evt.get("action_type") or "").lower()
         period = evt.get("period") or current_period
         clock = evt.get("clock") or ""
@@ -783,8 +848,7 @@ def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id
         if period != current_period:
             new_period_start_clock = f"{_period_duration(period) // 60}:00"
             # Close any open possession before flushing the period
-            _close_open_possession()
-            current_possessor_id = None
+            poss.end_of_period()
             for tl in team_state.values():
                 # Flush any pending subs before closing period
                 tl.flush_pending_subs(
@@ -832,97 +896,19 @@ def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id
             if tl._pending_subs:
                 tl.flush_pending_subs(game_secs, action, clock, period)
 
-        # --- Stat attribution ---
+        # --- Stat and possession attribution ---
         if event_team_id and event_team_id in team_state and action_type in (
             "2pt", "3pt", "freethrow", "rebound", "assist", "turnover", "steal", "block", "foul",
         ):
-            for tid, tl in team_state.items():
-                if tid != event_team_id:
-                    tl.add_opp_stat(action_type, evt.get("sub_type"), bool(evt.get("success")))
-
-        if action_type in ("2pt", "3pt", "freethrow"):
-            success = bool(evt.get("success"))
-            scoring = bool(evt.get("scoring"))
-
-            # Points scored this play
-            pts = 0
-            if success and scoring:
-                if action_type == "2pt":
-                    pts = 2
-                elif action_type == "3pt":
-                    pts = 3
-                elif action_type == "freethrow":
-                    pts = 1
-
-            if event_team_id and event_team_id in team_state:
-                team_state[event_team_id].add_stat(action_type, "", success, scoring, pts)
-
-            # Points against for the opponent
-            if pts > 0:
-                for tid, tl in team_state.items():
-                    if tid != event_team_id:
-                        tl.add_points_against(pts)
-
-        elif action_type == "rebound":
-            sub_type = (evt.get("sub_type") or "").lower()
-            if event_team_id and event_team_id in team_state:
-                team_state[event_team_id].add_stat("rebound", sub_type, True, False)
-
-        elif action_type in ("turnover", "foul", "steal", "block", "assist"):
-            if event_team_id and event_team_id in team_state:
-                team_state[event_team_id].add_stat(action_type, "", True, False)
-
-        # --- Possession attribution ---
-        # Possessions are tracked via explicit ownership (current_possessor_id).
-        # A possession ends on: made FG, turnover, or defensive rebound.
-        # Offensive rebounds continue the same possession (possessor unchanged).
-        # Period/game boundaries close any open possession via _close_open_possession().
-        # Free throws are not counted as independent possession enders; the surrounding
-        # made FG or defensive rebound after the last missed FT covers the sequence.
-        if action_type in ("2pt", "3pt"):
-            success = bool(evt.get("success"))
-            scoring = bool(evt.get("scoring"))
-            if success and scoring and event_team_id and event_team_id in team_state:
-                # Scoring team's possession ended with a make
-                team_state[event_team_id].possessions_for += 1
-                for tid, tl in team_state.items():
-                    if tid != event_team_id:
-                        tl.possessions_against += 1
-                # Opponent now has possession
-                current_possessor_id = next(
-                    (tid for tid in team_state if tid != event_team_id), None
-                )
-
-        elif action_type == "turnover":
-            if event_team_id and event_team_id in team_state:
-                team_state[event_team_id].possessions_for += 1
-                for tid, tl in team_state.items():
-                    if tid != event_team_id:
-                        tl.possessions_against += 1
-                # Opponent gains possession
-                current_possessor_id = next(
-                    (tid for tid in team_state if tid != event_team_id), None
-                )
-
-        elif action_type == "rebound":
-            reb_sub_type = (evt.get("sub_type") or "").lower()
-            if reb_sub_type == "defensive" and event_team_id and event_team_id in team_state:
-                # Defensive rebound: the team that missed (NOT the rebounder) ends their possession
-                team_state[event_team_id].possessions_against += 1
-                for tid, tl in team_state.items():
-                    if tid != event_team_id:
-                        tl.possessions_for += 1
-                # Rebounder now has possession
-                current_possessor_id = event_team_id
-            elif reb_sub_type == "offensive" and event_team_id and event_team_id in team_state:
-                # Offensive rebound: same team retains possession
-                current_possessor_id = event_team_id
+            nxt = next((e for e in events[i + 1:]
+                        if (e.get("action_type") or "").lower() != "substitution"), None
+                       ) if action_type == "rebound" else None
+            poss.event(evt, event_team_id, nxt)
 
         # --- End-of-game / end-of-period markers ---
         if action_type in ("gameend", "endofgame", "endofperiod", "periodend"):
             # Close any possession still open at the buzzer
-            _close_open_possession()
-            current_possessor_id = None
+            poss.end_of_period()
             for tl in team_state.values():
                 tl.close_stint(game_secs, action, clock)
                 tl.stint_start_action = None  # don't reopen
@@ -935,7 +921,7 @@ def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id
         last_action = last_evt.get("action_number") or 0
         last_secs = _event_game_secs(last_period, last_clock)
         # Close any possession still open at the true end of the game
-        _close_open_possession()
+        poss.end_of_period()
         for tl in team_state.values():
             if tl._pending_subs:
                 tl.flush_pending_subs(last_secs, last_action, last_clock, last_period)
