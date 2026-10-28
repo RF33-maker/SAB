@@ -216,6 +216,20 @@ def test_unknown_team_adds_nothing():
     assert poss(g.stints()) == {A: 0, B: 0}
 
 
+def test_duplicate_roster_teams_that_never_play_are_left_out():
+    # An imported game filed under two competitions lists each side twice,
+    # with a second team id that the play-by-play never uses.
+    g = Game().shot(A, True).shot(B, False).reb(A, "defensive").turnover(A).steal(B).shot(B, True)
+    rosters = {A: roster(A), B: roster(B)}
+    for dup in ("team-a-other-comp", "team-b-other-comp"):
+        rosters[dup] = [{**p, "team_id": dup, "team_no": None, "player_id": p["player_id"] + "-dup"}
+                        for p in roster(A)]
+    s = compute_stints(rosters, g.events, "game", "league")
+    assert {x["team_id"] for x in s} == {A, B}
+    assert poss(s) == {A: 2, B: 2}
+    assert_balanced(s)
+
+
 def test_possessions_alternate_through_a_mixed_sequence():
     g = (Game().shot(A, True).turnover(B).steal(A).shot(A, False).reb(B, "defensive")
          .foul(A).ft(B, 1, 2, True).ft(B, 2, 2, True).shot(A, False).reb(A, "offensive")

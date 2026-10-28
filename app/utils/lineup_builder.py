@@ -759,6 +759,7 @@ def build_lineups_for_game(
         log.warning("game=%s: no live_events, skipping lineup build", game_key)
         return False
 
+    rosters_by_team = teams_in_play(rosters_by_team, events)
     all_stints = compute_stints(rosters_by_team, events, game_key, league_id)
 
     log.info("game=%s: generated %d lineup stints", game_key, len(all_stints))
@@ -774,11 +775,33 @@ def build_lineups_for_game(
     return _write_stints(rosters_by_team, all_stints, game_key, league_id)
 
 
+def teams_in_play(rosters_by_team: dict, events: list) -> dict:
+    """
+    Keep only the two roster teams the play-by-play uses.
+
+    Some imported games list each side twice in game_rosters, once under each
+    competition the game was filed in, with different team ids. The extra pair
+    never appears in the events, so it used to get "stints" of its starters on
+    court for the whole game, and the possession tracker could take one of
+    them as the opponent.
+    """
+    if len(rosters_by_team) <= 2:
+        return rosters_by_team
+    event_teams = {e.get("team_id") for e in events if e.get("team_id")}
+    playing = {t: r for t, r in rosters_by_team.items() if t in event_teams}
+    if len(playing) == 2:
+        return playing
+    log.warning("game has %d roster teams and %d of them in the events; keeping all",
+                len(rosters_by_team), len(playing))
+    return rosters_by_team
+
+
 def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id: str) -> list:
     """
     Reconstruct lineup stints from rosters and live_events, without touching
     the database. Returns lineup_stints rows ready for insertion.
     """
+    rosters_by_team = teams_in_play(rosters_by_team, events)
     events = order_events_by_game_clock(events)
 
     # --- Build team state objects ---
