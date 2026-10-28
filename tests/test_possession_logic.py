@@ -1,207 +1,225 @@
 """
-Regression tests for possession counting logic in the lineup builder.
+Possession counting in the lineup builder, driven through compute_stints with
+short synthetic games so the tests exercise the code that runs in production.
 
-These tests exercise the core possession-end attribution rules without
-touching Supabase, by replicating the possession-counting block from
-build_lineups_for_game in a minimal harness.
-
-Coverage:
-  - Made 2PT / 3PT       → scoring team possessions_for += 1
-  - Turnover             → TO team possessions_for += 1
-  - Defensive rebound    → missed-shot team possessions_for += 1 (rebounder possessions_against += 1)
-  - Offensive rebound    → no possession count, same team retains ball
-  - Missed FG + OREB + make → single possession for the scoring team
-  - Period-end buzzer    → open possession is closed before the period flush
-  - FT-heavy sequence    → FTs do not individually end possessions
-  - Unknown event_team   → no spurious counts when event_team_id is missing
+Rules covered:
+  - the ball changes hands on a made FG, a turnover, a defensive rebound, or a
+    made last free throw; an offensive rebound keeps it
+  - single free throws (and-ones, technicals), unsportsmanlike free throws
+    and dead-ball team rebounds between free throws don't change possession
+  - free throws, and the possession they end, belong to the lineups on court
+    for the foul, even when substitutions come in before the shots
+  - possessions alternate even when the feed misses an event in between
+  - an open possession counts at the end of a period only if the team did
+    something with it
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.utils.lineup_builder import _TeamLineup
+from app.utils.lineup_builder import compute_stints  # noqa: E402
 
-TEAM_A = "aaaa-aaaa"
-TEAM_B = "bbbb-bbbb"
-GAME = "test-game"
-LEAGUE = "test-league"
+A, B = "team-a", "team-b"
+TEAM_NO = {A: "1", B: "2"}
 
 
-class PossessionCounter:
-    """
-    Minimal reimplementation of the possession-counting block inside
-    build_lineups_for_game.  Mirrors the exact branching logic so regressions
-    here catch production regressions too.
-    """
+def roster(team):
+    rows = []
+    for n in range(1, 8):
+        rows.append({
+            "team_id": team, "team_no": TEAM_NO[team], "player_name": f"{team} {n}",
+            "shirt_number": str(n), "pno": n, "starter": n <= 5, "active": True,
+            "player_id": f"{team}-p{n}",
+        })
+    return rows
 
+
+class Game:
     def __init__(self):
-        self.teams = {
-            TEAM_A: _TeamLineup(team_id=TEAM_A, league_id=LEAGUE, game_key=GAME),
-            TEAM_B: _TeamLineup(team_id=TEAM_B, league_id=LEAGUE, game_key=GAME),
-        }
-        self.current_possessor_id = None
+        self.events = []
+        self.secs = 600  # seconds left in the period
+        self.period = 1
 
-    def _close_open_possession(self):
-        pid = self.current_possessor_id
-        if pid and pid in self.teams:
-            self.teams[pid].possessions_for += 1
-            for tid, tl in self.teams.items():
-                if tid != pid:
-                    tl.possessions_against += 1
-            return True
-        return False
+    def _add(self, team, action_type, sub_type="", success=None, pno=1, tick=True):
+        if tick:
+            self.secs -= 5
+        self.events.append({
+            "action_number": len(self.events) + 1, "period": self.period,
+            "clock": f"{self.secs // 60:02d}:{self.secs % 60:02d}",
+            "team_no": TEAM_NO.get(team, ""), "team_id": team,
+            "player_id": f"{team}-p{pno}" if pno else None, "pno": pno,
+            "player_name": f"{team} {pno}" if pno else "",
+            "action_type": action_type, "sub_type": sub_type,
+            "success": success, "scoring": bool(success),
+        })
+        return self
 
-    def event(self, action_type, event_team_id, sub_type="", success=True, scoring=True):
-        action_type = action_type.lower()
-        if action_type in ("2pt", "3pt"):
-            if success and scoring and event_team_id and event_team_id in self.teams:
-                self.teams[event_team_id].possessions_for += 1
-                for tid, tl in self.teams.items():
-                    if tid != event_team_id:
-                        tl.possessions_against += 1
-                self.current_possessor_id = next(
-                    (tid for tid in self.teams if tid != event_team_id), None
-                )
-        elif action_type == "turnover":
-            if event_team_id and event_team_id in self.teams:
-                self.teams[event_team_id].possessions_for += 1
-                for tid, tl in self.teams.items():
-                    if tid != event_team_id:
-                        tl.possessions_against += 1
-                self.current_possessor_id = next(
-                    (tid for tid in self.teams if tid != event_team_id), None
-                )
-        elif action_type == "rebound":
-            if sub_type == "defensive" and event_team_id and event_team_id in self.teams:
-                self.teams[event_team_id].possessions_against += 1
-                for tid, tl in self.teams.items():
-                    if tid != event_team_id:
-                        tl.possessions_for += 1
-                self.current_possessor_id = event_team_id
-            elif sub_type == "offensive" and event_team_id and event_team_id in self.teams:
-                self.current_possessor_id = event_team_id
+    def shot(self, team, made, three=False):
+        return self._add(team, "3pt" if three else "2pt", "jumpshot", made)
 
-    def period_end(self):
-        self._close_open_possession()
-        self.current_possessor_id = None
+    def ft(self, team, n, of, made):
+        return self._add(team, "freethrow", f"{n}of{of}", made, tick=False)
 
-    def pf(self, team_id):
-        return self.teams[team_id].possessions_for
+    def foul(self, team, kind="personal", tick=True):
+        return self._add(team, "foul", kind, tick=tick)
 
-    def pa(self, team_id):
-        return self.teams[team_id].possessions_against
+    def reb(self, team, kind, pno=1):
+        return self._add(team, "rebound", kind, pno=pno, tick=False)
+
+    def turnover(self, team):
+        return self._add(team, "turnover", "badpass")
+
+    def steal(self, team):
+        return self._add(team, "steal", tick=False)
+
+    def sub(self, team, out_pno, in_pno):
+        self._add(team, "substitution", "out", pno=out_pno, tick=False)
+        return self._add(team, "substitution", "in", pno=in_pno, tick=False)
+
+    def next_period(self):
+        self.period += 1
+        self.secs = 600
+        return self
+
+    def stints(self):
+        return compute_stints({A: roster(A), B: roster(B)}, self.events, "game", "league")
 
 
-def test_made_2pt_ends_possession():
-    c = PossessionCounter()
-    c.event("2pt", TEAM_A)
-    assert c.pf(TEAM_A) == 1, "scoring team should have 1 possession"
-    assert c.pa(TEAM_B) == 1, "opponent should have 1 possession against"
-    assert c.pf(TEAM_B) == 0
-    assert c.pa(TEAM_A) == 0
-    assert c.current_possessor_id == TEAM_B, "ball transfers to opponent after make"
+def totals(stints, team, key):
+    return sum(s[key] for s in stints if s["team_id"] == team)
 
 
-def test_made_3pt_ends_possession():
-    c = PossessionCounter()
-    c.event("3pt", TEAM_B)
-    assert c.pf(TEAM_B) == 1
-    assert c.pa(TEAM_A) == 1
-    assert c.current_possessor_id == TEAM_A
+def poss(stints):
+    return {t: totals(stints, t, "possessions_for") for t in (A, B)}
 
 
-def test_turnover_ends_possession():
-    c = PossessionCounter()
-    c.event("turnover", TEAM_A)
-    assert c.pf(TEAM_A) == 1
-    assert c.pa(TEAM_B) == 1
-    assert c.current_possessor_id == TEAM_B
+def assert_balanced(stints):
+    assert totals(stints, A, "possessions_for") == totals(stints, B, "possessions_against")
+    assert totals(stints, B, "possessions_for") == totals(stints, A, "possessions_against")
 
 
-def test_defensive_rebound_ends_possession_for_missed_shot_team():
-    c = PossessionCounter()
-    c.event("rebound", TEAM_B, sub_type="defensive")
-    assert c.pf(TEAM_A) == 1, "team that missed gets possession counted"
-    assert c.pa(TEAM_B) == 1, "rebounder's team gets possession_against"
-    assert c.current_possessor_id == TEAM_B, "rebounder gains ball"
+def test_made_field_goal_ends_the_possession():
+    s = Game().shot(A, True).stints()
+    assert poss(s) == {A: 1, B: 0}
+    assert_balanced(s)
 
 
-def test_offensive_rebound_no_possession_end():
-    c = PossessionCounter()
-    c.event("rebound", TEAM_A, sub_type="offensive")
-    assert c.pf(TEAM_A) == 0
-    assert c.pa(TEAM_A) == 0
-    assert c.pf(TEAM_B) == 0
-    assert c.pa(TEAM_B) == 0
-    assert c.current_possessor_id == TEAM_A, "offensive rebounder retains ball"
+def test_offensive_rebound_keeps_the_possession():
+    s = Game().shot(A, False).reb(A, "offensive").shot(A, False).reb(A, "offensive").shot(A, True).stints()
+    assert poss(s) == {A: 1, B: 0}
 
 
-def test_missed_fg_oreb_then_make_is_one_possession():
-    c = PossessionCounter()
-    c.event("2pt", TEAM_A, success=False, scoring=False)
-    c.event("rebound", TEAM_A, sub_type="offensive")
-    c.event("2pt", TEAM_A)
-    assert c.pf(TEAM_A) == 1, "only one possession ends despite two shot attempts"
-    assert c.pa(TEAM_B) == 1
+def test_defensive_rebound_ends_the_possession():
+    s = Game().shot(A, False).reb(B, "defensive").shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
+    assert_balanced(s)
 
 
-def test_period_end_closes_open_possession():
-    c = PossessionCounter()
-    c.event("2pt", TEAM_A)
-    assert c.current_possessor_id == TEAM_B
-    c.period_end()
-    assert c.pf(TEAM_B) == 1, "open end-of-period possession attributed to ball holder"
-    assert c.pa(TEAM_A) == 1
-    assert c.current_possessor_id is None
+def test_turnover_and_steal_are_one_possession():
+    s = Game().turnover(A).steal(B).shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
 
 
-def test_period_end_no_possessor_does_nothing():
-    c = PossessionCounter()
-    c.period_end()
-    assert c.pf(TEAM_A) == 0
-    assert c.pf(TEAM_B) == 0
+def test_made_last_free_throw_ends_the_possession():
+    s = Game().shot(A, True).foul(A).ft(B, 1, 2, True).ft(B, 2, 2, True).shot(A, False).reb(B, "defensive").stints()
+    assert poss(s) == {A: 2, B: 1}
+    assert totals(s, B, "points_for") == 2
+    assert_balanced(s)
 
 
-def test_symmetry_possessions_for_equals_against():
-    c = PossessionCounter()
-    c.event("2pt", TEAM_A)
-    c.event("turnover", TEAM_B)
-    c.event("rebound", TEAM_A, sub_type="defensive")
-    c.event("2pt", TEAM_A)
-    c.period_end()
-    total_for_a = c.pf(TEAM_A)
-    total_for_b = c.pf(TEAM_B)
-    total_against_a = c.pa(TEAM_A)
-    total_against_b = c.pa(TEAM_B)
-    assert total_for_a == total_against_b, "Team A's possessions_for must equal Team B's possessions_against"
-    assert total_for_b == total_against_a, "Team B's possessions_for must equal Team A's possessions_against"
+def test_missed_last_free_throw_then_defensive_rebound_is_one_possession():
+    s = Game().foul(B).ft(A, 1, 2, True).ft(A, 2, 2, False).reb(B, "defensive").stints()
+    assert poss(s) == {A: 1, B: 0}
 
 
-def test_ft_heavy_sequence_no_extra_possessions():
-    """
-    FTs alone must not end possessions.  A common sequence is:
-      foul → FT1 (miss) → FT2 (make) → defensive rebound (after FT1)
-    Only the defensive rebound following the miss should end the possession.
-    """
-    c = PossessionCounter()
-    c.event("freethrow", TEAM_A, success=False, scoring=False)
-    c.event("freethrow", TEAM_A, success=True, scoring=True)
-    assert c.pf(TEAM_A) == 0, "FTs do not end possessions directly"
-    assert c.pa(TEAM_B) == 0
-    c.event("rebound", TEAM_B, sub_type="defensive")
-    assert c.pf(TEAM_A) == 1, "missed FT followed by dreb ends the possession"
-    assert c.pa(TEAM_B) == 1
+def test_and_one_is_one_possession():
+    # The feed logs the and-one foul at the same second as the basket.
+    s = Game().shot(A, True).foul(B, tick=False).ft(A, 1, 1, True).shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
+    assert totals(s, A, "points_for") == 3
 
 
-def test_unknown_event_team_id_no_spurious_counts():
-    c = PossessionCounter()
-    c.event("rebound", None, sub_type="defensive")
-    assert c.pf(TEAM_A) == 0
-    assert c.pf(TEAM_B) == 0
-    assert c.pa(TEAM_A) == 0
-    assert c.pa(TEAM_B) == 0
+def test_technical_free_throw_does_not_change_possession():
+    # B has the ball; a technical on A's coach gives B one shot and B keeps it.
+    s = Game().shot(A, True).foul(A, "coachTechnical").ft(B, 1, 1, True).shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
+    assert totals(s, B, "points_for") == 3
 
-    c.event("turnover", None)
-    assert c.pf(TEAM_A) == 0
-    assert c.pf(TEAM_B) == 0
+    # A technical on the team with the ball: the shooters are on defence.
+    s = Game().shot(A, True).foul(B, "technical").ft(A, 1, 1, True).shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
+
+
+def test_free_throws_after_the_other_side_gained_the_ball_are_a_new_possession():
+    # A scores, B inbounds, and later A shoots bonus free throws: B's
+    # possession ended somewhere the feed didn't log, and A has a new one.
+    s = Game().shot(A, True).foul(B).ft(A, 1, 2, True).ft(A, 2, 2, True).stints()
+    assert poss(s) == {A: 2, B: 1}
+    assert_balanced(s)
+
+
+def test_possessions_alternate_when_the_feed_misses_an_event():
+    # A scores, then A shoots again with no B event in between.
+    s = Game().shot(A, True).shot(A, False).reb(B, "defensive").stints()
+    assert poss(s) == {A: 2, B: 1}
+
+
+def test_single_free_throw_never_moves_the_ball():
+    # A technical shot by the team with the ball, with no technical foul logged.
+    s = Game().foul(B).ft(A, 1, 1, True).shot(A, True).stints()
+    assert poss(s) == {A: 1, B: 0}
+    # An and-one logged a few seconds after the basket.
+    s = Game().shot(A, True).foul(B).ft(A, 1, 1, True).shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
+
+
+def test_unsportsmanlike_free_throws_keep_the_ball():
+    s = Game().foul(B, "unsportsmanlike").ft(A, 1, 2, True).ft(A, 2, 2, True).shot(A, True).stints()
+    assert poss(s) == {A: 1, B: 0}
+    assert totals(s, A, "points_for") == 4
+
+
+def test_dead_ball_team_rebound_between_free_throws_is_ignored():
+    g = Game().foul(B).ft(A, 1, 2, False)
+    g.reb(B, "defensive", pno=None)  # team rebound credited to the defence
+    s = g.ft(A, 2, 2, True).shot(B, True).stints()
+    assert poss(s) == {A: 1, B: 1}
+
+
+def test_free_throws_go_to_the_lineup_on_court_for_the_foul():
+    # B fouls A's p1, then both teams substitute before the shots.
+    s = Game().foul(B).sub(A, 1, 6).sub(B, 2, 7).ft(A, 1, 2, True).ft(A, 2, 2, True).shot(B, True).stints()
+    a_first, a_second = sorted((x for x in s if x["team_id"] == A), key=lambda x: x["start_game_secs"])
+    b_first, b_second = sorted((x for x in s if x["team_id"] == B), key=lambda x: x["start_game_secs"])
+    assert "team-a-p1" in a_first["lineup_player_ids"]
+    assert (a_first["points_for"], a_first["possessions_for"], a_first["ft_attempted"]) == (2, 1, 2)
+    assert (a_second["points_for"], a_second["possessions_for"]) == (0, 0)
+    assert (b_first["points_against"], b_first["possessions_against"], b_first["opp_ft_made"]) == (2, 1, 2)
+    assert (b_second["points_for"], b_second["possessions_for"]) == (2, 1)
+    assert_balanced(s)
+
+
+def test_open_possession_counts_at_period_end_only_if_used():
+    # A scores, B takes a shot and the quarter ends: B's possession counts.
+    s = Game().shot(A, True).shot(B, False).next_period().shot(A, True).stints()
+    assert poss(s)[B] == 1
+    # A scores and B runs the clock out without doing anything: nothing for B.
+    s = Game().shot(A, True).next_period().shot(A, True).stints()
+    assert poss(s) == {A: 2, B: 0}
+
+
+def test_unknown_team_adds_nothing():
+    g = Game()
+    g._add("nobody", "rebound", "defensive")
+    g._add("nobody", "turnover", "badpass")
+    assert poss(g.stints()) == {A: 0, B: 0}
+
+
+def test_possessions_alternate_through_a_mixed_sequence():
+    g = (Game().shot(A, True).turnover(B).steal(A).shot(A, False).reb(B, "defensive")
+         .foul(A).ft(B, 1, 2, True).ft(B, 2, 2, True).shot(A, False).reb(A, "offensive")
+         .shot(A, True, three=True).foul(B, tick=False).ft(A, 1, 1, False).reb(B, "defensive").shot(B, True))
+    s = g.stints()
+    assert poss(s) == {A: 3, B: 3}
+    assert_balanced(s)
