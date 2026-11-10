@@ -45,6 +45,7 @@ from supabase.lib.client_options import ClientOptions
 from app.utils.json_parser import parse_and_store_game, backfill_orphaned_schedule_rows, feed_teams
 from app.utils.compute_advanced_stats import compute_advanced_stats
 from app.utils.reconcile import RECONCILE_WINDOW, feed_fingerprint, reconcile_next_poll
+from app.utils.legacy_feed import normalize_legacy_feed
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(
@@ -389,7 +390,7 @@ def fetch_livestats_json(data_url: str, game_key: str = "probe"):
     if response.status_code == 304:
         return response, None, metrics
 
-    data = response.json() if response.status_code == 200 else None
+    data = normalize_legacy_feed(response.json()) if response.status_code == 200 else None
     if data:
         metrics["pbp_total"] = len(data.get("pbp", []))
     return response, data, metrics

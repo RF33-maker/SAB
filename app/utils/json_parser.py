@@ -7,6 +7,8 @@ from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from app.utils.compute_advanced_stats import compute_advanced_stats
 from app.utils.player_names import clean_feed_name, initial_matches_full_name, is_initial_name, pick_player
+from app.utils.seasons import season_start_year, should_move_team_forward
+from app.utils.legacy_feed import normalize_legacy_feed
 
 log = logging.getLogger("json_parser")
 
@@ -419,23 +421,8 @@ def _strip_season(name: str) -> str:
 
 
 def _parse_season_start_year(name: str):
-    """
-    Extract a competition's season start year from its name, handling the
-    formats actually used across leagues: '2026-27', '2026-2027', '2025/26',
-    or a 2-digit start year like '26-27'. A 2-digit start year is assumed to
-    be 20xx. Returns None if no trailing year/season pattern is found.
-    """
-    import re
-    match = re.search(r"(\d{2,4})\s*[/–-]\s*\d{2,4}\s*$", name or "")
-    if not match:
-        match = re.search(r"(\d{4})\s*$", name or "")
-    if not match:
-        return None
-    start = match.group(1)
-    start_num = int(start)
-    if len(start) == 2:
-        start_num += 2000
-    return start_num
+    """Season start year from a competition name; see utils.seasons."""
+    return season_start_year(name)
 
 
 def _find_league_id_fuzzy_season(name: str, exclude_league_id: str = None, organisation: str = None, team_names: list = None):
@@ -533,9 +520,17 @@ def get_or_create_team(league_id: str, name: str, user_id: str = None, sibling_l
         # forward to this competition, so the current season's Teams tab
         # (which filters teams by league_id) picks it up. Historical
         # game/stat rows for the old season are unaffected — they carry
-        # their own team name and this same stable team_id.
+        # their own team name and this same stable team_id. Only move it
+        # forward, never back: parsing an older season (history import)
+        # keeps the team on its current competition.
         matched = res.data[0]
-        ref_db.table("teams").update({"league_id": league_id}).eq("team_id", matched["team_id"]).execute()
+        names = {
+            r["league_id"]: r["name"]
+            for r in (ref_db.table("competitions").select("league_id,name")
+                      .in_("league_id", [league_id, matched["league_id"]]).execute().data or [])
+        }
+        if should_move_team_forward(names.get(matched["league_id"]), names.get(league_id)):
+            ref_db.table("teams").update({"league_id": league_id}).eq("team_id", matched["team_id"]).execute()
         return matched["team_id"]
 
     new = ref_db.table("teams").insert({"league_id": league_id, "name": normalized_name}).execute()
@@ -776,7 +771,7 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         if r.status_code != 200:
             print(f"⏭️  No stats available yet (HTTP {r.status_code}) - game added to schedule")
             return
-        data = r.json()
+        data = normalize_legacy_feed(r.json())
     except Exception as e:
         print(f"⏭️  No stats available yet ({e}) - game added to schedule")
         return
