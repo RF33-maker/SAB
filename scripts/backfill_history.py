@@ -90,6 +90,12 @@ def main():
             )
             if not league_id:
                 raise RuntimeError("feed returned no stats")
+            # parse_and_store_game logs a play-by-play error and carries on, so a
+            # dropped connection there would leave the game with stats but no plays.
+            plays = game_db.table("live_events").select("game_key", count="exact", head=True) \
+                .eq("game_key", key).execute().count
+            if not plays:
+                raise RuntimeError("no play-by-play stored")
             game_db.table("game_schedule").update({
                 "status": "final",
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
