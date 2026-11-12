@@ -66,10 +66,96 @@ def test_current_feed_left_alone():
     feed = legacy_feed()
     for i, e in enumerate(reversed(feed["pbp"]), start=1):
         e["actionNumber"] = i * 10
+        e["clock"] = f"{e['gt']}:00"
     before = copy.deepcopy(feed)
     assert normalize_legacy_feed(feed) == before
+
+
+def test_clock_filled_from_gt_on_numbered_feed():
+    # 2019-20 feeds number their events but give the clock only as "gt".
+    feed = legacy_feed()
+    for i, e in enumerate(reversed(feed["pbp"]), start=1):
+        e["actionNumber"] = i
+    data = normalize_legacy_feed(feed)
+    assert [e["clock"] for e in data["pbp"]] == [
+        "00:00:00", "00:00:00", "00:03:00", "04:10:00", "08:00:00", "10:00:00"]
+    assert data["tm"]["1"]["tot_sMinutes"] == 0  # numbered feeds keep their totals
+
+
+def test_clock_filled_on_legacy_feed():
+    data = normalize_legacy_feed(legacy_feed())
+    assert all(e["clock"] == f"{e['gt']}:00" for e in data["pbp"])
+
+
+def oldest_feed():
+    # 2015-17 shape: shots carry "p" and no team number, names lead with the shirt.
+    feed = legacy_feed()
+    for e in feed["pbp"]:
+        if e["pno"]:
+            e["player"] = f"1{e['pno']}, A. Smith"
+    for team in feed["tm"].values():
+        for shot in team["shot"]:
+            shot["p"] = shot.pop("pno")
+            shot["player"] = f"1{shot['p']}, A. Smith"
+    return feed
+
+
+def test_oldest_shots_get_player_and_team():
+    data = normalize_legacy_feed(oldest_feed())
+    numbers = {(e["tno"], e["pno"], e["period"]): e["actionNumber"] for e in data["pbp"] if e["tno"]}
+    home, away = data["tm"]["1"]["shot"], data["tm"]["2"]["shot"]
+    assert [(s["pno"], s["tno"]) for s in home] == [(5, 1), (5, 1)]
+    assert (away[0]["pno"], away[0]["tno"]) == (7, 2)
+    assert home[0]["actionNumber"] == numbers[(1, 5, 1)]
+    assert away[0]["actionNumber"] == numbers[(2, 7, 2)]
+
+
+def test_oldest_names_lose_the_shirt_prefix():
+    data = normalize_legacy_feed(oldest_feed())
+    scorer = next(e for e in data["pbp"] if e["pno"] == 5)
+    assert scorer["player"] == "A. Smith" and scorer["shirtNumber"] == "15"
+    shot = data["tm"]["2"]["shot"][0]
+    assert shot["player"] == "A. Smith" and shot["shirtNumber"] == "17"
+
+
+def test_shirt_prefix_kept_off_numbered_feeds():
+    feed = oldest_feed()
+    for i, e in enumerate(reversed(feed["pbp"]), start=1):
+        e["actionNumber"] = i
+    data = normalize_legacy_feed(feed)
+    # Only the clock is filled on a numbered feed; names are left as given.
+    assert next(e for e in data["pbp"] if e["pno"] == 5)["player"] == "15, A. Smith"
+
+
+def test_blank_shirt_number_becomes_missing():
+    # 2016-17 feed (game 605013) gave one player shirtNumber "", which the
+    # integer players.shirtNumber column rejects.
+    feed = legacy_feed()
+    feed["tm"]["2"]["pl"] = {"7": {"sMinutes": "10:00", "shirtNumber": ""}}
+    feed["pbp"][3]["shirtNumber"] = ""
+    feed["tm"]["1"]["pl"]["5"]["shirtNumber"] = "12"
+    data = normalize_legacy_feed(feed)
+    assert data["tm"]["2"]["pl"]["7"]["shirtNumber"] is None
+    assert next(e for e in data["pbp"] if e["pno"] == 7)["shirtNumber"] is None
+    assert data["tm"]["1"]["pl"]["5"]["shirtNumber"] == "12"
 
 
 def test_empty_feed_left_alone():
     assert normalize_legacy_feed({"pbp": [], "tm": {}}) == {"pbp": [], "tm": {}}
     assert normalize_legacy_feed(None) is None
+
+
+def test_overtime_feed_numbered_from_the_tip():
+    # OT1 comes through as period 1 / OVERTIME, so the newest and oldest events
+    # both say period 1; the earliest event here is a substitution, not "start".
+    pbp = [
+        {**ev(1, "game", "end", gt="00:00"), "periodType": "OVERTIME", "s1": 104, "s2": 114},
+        {**ev(1, "2pt", "layup", tno=2, pno=7, gt="00:30"), "periodType": "OVERTIME", "s1": 104, "s2": 112},
+        {**ev(4, "2pt", "layup", tno=1, pno=5, gt="00:10"), "s1": 93, "s2": 93},
+        {**ev(1, "2pt", "layup", tno=1, pno=5, gt="09:30"), "s1": 2, "s2": 0},
+        {**ev(1, "substitution", "in", tno=1, pno=5, gt="10:00"), "s1": 0, "s2": 0},
+    ]
+    data = normalize_legacy_feed({"pbp": pbp, "tm": {}})
+    by_number = sorted(data["pbp"], key=lambda e: e["actionNumber"])
+    assert by_number[0]["actionType"] == "substitution"
+    assert by_number[-1]["subType"] == "end" and by_number[-1]["periodType"] == "OVERTIME"
