@@ -572,7 +572,8 @@ def _resolve_player_from_event(event: dict, roster: list) -> dict:
     fallback = {
         "player_id": event.get("player_id"),
         "player_name": event.get("player_name"),
-        "shirt_number": event.get("shirt_number") or event.get("pno"),
+        # pno comes back from the database as an int; shirt numbers are text.
+        "shirt_number": str(event.get("shirt_number") or event.get("pno") or "") or None,
     }
     if not roster:
         return fallback
