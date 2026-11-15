@@ -704,7 +704,7 @@ def _drop_stale_player_rows(game_key: str, numeric_id: str, player_records: list
     game_db.table("player_stats").delete().in_("id", [row["id"] for row in stale]).execute()
 
 
-def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None, league_id: str = None, organisation: str = None):
+def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home_team_name=None, away_team_name=None, game_key=None, livestats_url=None, user_id: str = None, pool=None, league_id: str = None, organisation: str = None, live: bool = False):
     print(f"🔍 Processing game {numeric_id}")
 
     # --- Ensure league ---
@@ -1115,7 +1115,9 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
     # Only run if roster and PBP data are present; log a warning rather than failing.
     try:
         from app.utils.lineup_builder import build_lineups_for_game
-        build_lineups_for_game(game_key=game_key, league_id=league_id)
+        # live=True (a mid-game sync) rebuilds at most every few minutes and
+        # leaves the season on/off summary for the final parse.
+        build_lineups_for_game(game_key=game_key, league_id=league_id, live=live)
     except Exception as e:
         log.warning("Lineup builder failed for game %s (non-fatal): %s", game_key, e)
 

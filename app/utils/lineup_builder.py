@@ -33,10 +33,24 @@ lineup_key generation:
 
 import os
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
 log = logging.getLogger("lineup_builder")
+
+# While a game is live its stints are rebuilt at most this often. Each rebuild
+# deletes and re-inserts every stint row for the game, and doing that on every
+# 15-second poll for every live game overloaded the database (14 Nov 2026).
+LIVE_REBUILD_SECONDS = int(os.getenv("LIVE_STINT_REBUILD_SECONDS", "300"))
+_last_live_build: dict[str, float] = {}
+
+
+def live_rebuild_due(game_key: str, now: Optional[float] = None) -> bool:
+    """True if a live game's stints haven't been rebuilt in the last LIVE_REBUILD_SECONDS."""
+    now = time.monotonic() if now is None else now
+    last = _last_live_build.get(game_key)
+    return last is None or now - last >= LIVE_REBUILD_SECONDS
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -730,6 +744,7 @@ def build_lineups_for_game(
     game_key: str,
     league_id: str,
     dry_run: bool = False,
+    live: bool = False,
 ) -> bool:
     """
     Reconstruct 5-man lineups for *game_key* and write to lineup_stints
@@ -740,11 +755,24 @@ def build_lineups_for_game(
     game_key  : str   The game identifier.
     league_id : str   UUID of the league (for FK population).
     dry_run   : bool  If True, compute stints but do NOT write to Supabase.
+    live      : bool  If True the game is still being played: rebuild at most
+                      every LIVE_REBUILD_SECONDS, and leave the league's season
+                      on/off summary for when the game is final.
 
     Returns
     -------
-    bool  True on success, False on unrecoverable error.
+    bool  True on success (or a live rebuild skipped as not yet due), False on
+          unrecoverable error.
     """
+    if live and not dry_run:
+        if not live_rebuild_due(game_key):
+            log.debug("game=%s: live stint rebuild not due yet, skipping", game_key)
+            return True
+        # Stamped before the work so a failing build is not retried every poll.
+        _last_live_build[game_key] = time.monotonic()
+    elif not dry_run:
+        _last_live_build.pop(game_key, None)
+
     log.info("Starting lineup build for game=%s (dry_run=%s)", game_key, dry_run)
 
     # --- Load rosters ---
@@ -772,7 +800,7 @@ def build_lineups_for_game(
         log.info("game=%s: dry_run=True, skipping DB writes", game_key)
         return True
 
-    return _write_stints(rosters_by_team, all_stints, game_key, league_id)
+    return _write_stints(rosters_by_team, all_stints, game_key, league_id, refresh_season=not live)
 
 
 def teams_in_play(rosters_by_team: dict, events: list) -> dict:
@@ -957,8 +985,13 @@ def compute_stints(rosters_by_team: dict, events: list, game_key: str, league_id
     return all_stints
 
 
-def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league_id: str) -> bool:
-    """Replace the game's lineup_stints and player_on_court_stints with *all_stints*."""
+def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league_id: str, refresh_season: bool = True) -> bool:
+    """
+    Replace the game's lineup_stints and player_on_court_stints with *all_stints*.
+
+    refresh_season=False skips recomputing the league's season on/off summary,
+    which re-reads every stint of the season: it waits until the game is final.
+    """
     db = _get_db()
 
     # Delete existing stints for this game first (idempotent).
@@ -1051,7 +1084,8 @@ def _write_stints(rosters_by_team: dict, all_stints: list, game_key: str, league
     # On/off reads lineup_stints_context_v1 and the per-player summary table, so
     # refresh both here rather than relying on a separate backfill run.
     _write_context_rows(db, game_key, rosters_by_team)
-    _refresh_player_on_off(db, league_id)
+    if refresh_season:
+        _refresh_player_on_off(db, league_id)
 
     log.info(
         "game=%s: wrote %d lineup stints, %d player on-court rows",

@@ -588,6 +588,7 @@ def poll_game(game: dict):
                 livestats_url=livestats_url,
                 league_id=game.get("league_id"),
                 organisation=game.get("organisation"),
+                live=parse_reason == "live_sync",
             )
             parse_ms = round((perf_counter() - t_parse) * 1000, 1)
             log.info("%s: parse complete in %.1fms (pbp_total=%s)", game_key, parse_ms, metrics.get("pbp_total", "n/a"))
