@@ -1009,17 +1009,22 @@ def parse_and_store_game(numeric_id: str, league_name: str, game_date=None, home
         
         # Filter to only new events (actionNumber > last_action)
         pbp_records = []
+        # A game has two teams: resolve each once, not once per event (a full
+        # game is ~500 events, and each lookup is a database round trip).
+        pbp_team_ids = {}
         for e in pbp:
             action_num = e.get("actionNumber")
             if action_num is None or action_num <= last_action:
                 continue
-            
+
             team_id = None
             team_name = None
             tno = e.get("tno")
             if tno and str(tno) in teams:
                 team_name = teams[str(tno)].get("name")
-                team_id = get_or_create_team(league_id, team_name, user_id, sibling_league_ids)
+                if str(tno) not in pbp_team_ids:
+                    pbp_team_ids[str(tno)] = get_or_create_team(league_id, team_name, user_id, sibling_league_ids)
+                team_id = pbp_team_ids[str(tno)]
 
             player_id = None
             player_name = e.get("player")
